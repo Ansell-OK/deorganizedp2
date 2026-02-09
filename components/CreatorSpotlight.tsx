@@ -19,7 +19,7 @@ export const CreatorSpotlight: React.FC<CreatorSpotlightProps> = ({ onNavigate }
       </h2>
       
       {/* Light mode card with subtle gradient border */}
-      <div className="flex-1 bg-white border border-borderSubtle rounded-3xl p-1 relative overflow-hidden group shadow-soft">
+      <div className="flex-1 bg-canvas border border-borderSubtle rounded-3xl p-1 relative overflow-hidden group shadow-soft">
          <div className="absolute inset-0 bg-[url('https://picsum.photos/600/600?random=10')] bg-cover bg-center opacity-10 group-hover:scale-105 transition-transform duration-700" />
          <div className="absolute inset-0 bg-gradient-to-t from-white via-white/50 to-transparent" />
          
@@ -41,7 +41,7 @@ export const CreatorSpotlight: React.FC<CreatorSpotlightProps> = ({ onNavigate }
                >
                   View Profile
                </button>
-               <button className="flex-1 bg-white border border-borderSubtle text-ink font-semibold py-3 rounded-full text-sm hover:bg-surface hover:border-gold/30 transition-all">
+               <button className="flex-1 bg-canvas border border-borderSubtle text-ink font-semibold py-3 rounded-full text-sm hover:bg-surface hover:border-gold/30 transition-all">
                   Subscribe
                </button>
             </div>
@@ -50,3 +50,4 @@ export const CreatorSpotlight: React.FC<CreatorSpotlightProps> = ({ onNavigate }
     </div>
   );
 };
+

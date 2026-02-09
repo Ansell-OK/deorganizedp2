@@ -1,386 +1,1008 @@
-
-import React, { useState } from 'react';
-import { 
-  User, Settings, DollarSign, TrendingUp, Calendar as CalendarIcon, 
-  Plus, Users, Bell, Check, X, Clock, Video, 
-  BarChart3, ArrowUpRight, MoreHorizontal, ChevronDown, Repeat,
-  Heart, MessageSquare, Trophy, ChevronLeft, ChevronRight
+import React, { useState, useEffect } from 'react';
+import {
+   User, Settings, DollarSign, TrendingUp, Calendar as CalendarIcon,
+   Plus, Users, Bell, Check, X, Clock, Video,
+   BarChart3, ArrowUpRight, MoreHorizontal, Heart, MessageSquare,
+   Trophy, Loader2, ChevronLeft, ChevronRight, Repeat, ChevronDown
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { addMonths, subMonths, format } from 'date-fns';
+import { useAuth } from '../lib/AuthContext';
+import {
+   fetchCreatorShows,
+   fetchCreatorEvents,
+   fetchUserProfile,
+   updateUserProfile,
+   createShow,
+   fetchNotifications,
+   markNotificationRead,
+   markAllNotificationsRead,
+   CreateShowPayload,
+   Show,
+   Event,
+   CreatorStats,
+   UserProfile,
+   Notification,
+   Tag
+} from '../lib/api';
+import { RealTimeCalendar } from './RealTimeCalendar';
+import { EditShowModal } from './EditShowModal';
+import { TagInput } from './TagInput';
 
-export const CreatorDashboard: React.FC = () => {
-  const [calendarView, setCalendarView] = useState<'month' | 'week'>('month');
+interface CreatorDashboardProps {
+   onNavigate: (page: string) => void;
+}
 
-  // Mock Calendar Data
-  const days = Array.from({ length: 30 }, (_, i) => i + 1); // 30 days for Nov
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  
-  const scheduledShows = [
-    { id: 1, day: 21, title: "Weekly Market Wrap-up", time: "5:00 PM", status: "Ready", color: "green" },
-    { id: 2, day: 22, title: "Interview with Vitalik", time: "2:00 PM", status: "Scheduled", color: "blue" },
-    { id: 3, day: 24, title: "Layer 2 Analysis", time: "10:00 AM", status: "Scheduled", color: "blue" },
-    { id: 4, day: 28, title: "DeFi Deep Dive", time: "4:00 PM", status: "Draft", color: "gray" },
-  ];
+export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }) => {
+   const { backendUser, accessToken, logout } = useAuth();
 
-  const getShowForDay = (day: number) => scheduledShows.find(s => s.day === day);
+   // Data states
+   const [profile, setProfile] = useState<User | null>(null);
+   const [shows, setShows] = useState<Show[]>([]);
+   const [events, setEvents] = useState<Event[]>([]);
+   const [stats, setStats] = useState<CreatorStats | null>(null);
+   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  return (
-    <div className="min-h-screen pt-24 pb-20 container max-w-[1024px] mx-auto px-6 space-y-8">
-      
-      {/* Header */}
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-4xl font-bold text-ink mb-2">Creator Studio</h1>
-          <p className="text-inkLight font-medium">Manage your content, earnings, and community.</p>
-        </div>
-        <button className="hidden md:flex items-center gap-2 text-sm font-bold text-ink hover:text-gold transition-colors">
-          <Settings className="w-4 h-4" /> Settings
-        </button>
-      </div>
+   // Loading states
+   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+   const [isLoadingShows, setIsLoadingShows] = useState(true);
+   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+   const [isLoadingStats, setIsLoadingStats] = useState(true);
+   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
 
-      {/* 1. Profile Overview Card */}
-      <section className="bg-white border border-borderSubtle rounded-3xl p-6 md:p-8 shadow-soft relative overflow-hidden">
-        <div className="flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10">
-          <div className="relative">
-            <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-surface shadow-md overflow-hidden">
-              <img src="https://picsum.photos/300/300?random=88" alt="Profile" className="w-full h-full object-cover" />
-            </div>
-            <div className="absolute bottom-1 right-1 bg-gold text-white p-1.5 rounded-full border-2 border-white shadow-sm">
-              <Check className="w-4 h-4" />
-            </div>
-          </div>
-          
-          <div className="flex-1 text-center md:text-left">
-            <h2 className="text-2xl font-bold text-ink flex items-center justify-center md:justify-start gap-2 mb-1">
-              Sarah Blake <span className="bg-gold/10 text-gold text-xs px-2 py-0.5 rounded-full border border-gold/20 uppercase tracking-wider">Verified</span>
-            </h2>
-            <p className="text-inkLight font-medium mb-6">@sarah_defi • DeFi Educator & Analyst</p>
-            
-            <div className="grid grid-cols-3 gap-4 md:gap-12 border-t border-borderSubtle pt-6">
-              <div>
-                <div className="text-2xl font-bold text-ink">85.4k</div>
-                <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Followers</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-ink">1.2M</div>
-                <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Total Views</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-ink">4.8/5</div>
-                <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Rating</div>
-              </div>
-            </div>
-          </div>
+   // Calendar state
+   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
 
-          <div className="flex flex-col gap-3 min-w-[160px]">
-             <button className="bg-ink text-white font-bold py-2.5 rounded-xl hover:bg-gold transition-colors shadow-sm">
-                Edit Profile
-             </button>
-             <button className="bg-white border border-borderSubtle text-ink font-bold py-2.5 rounded-xl hover:bg-surface transition-colors">
-                View Channel
-             </button>
-          </div>
-        </div>
-        
-        {/* Background Decor */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gold/5 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-      </section>
+   // Form state
+   const [formData, setFormData] = useState({
+      title: '',
+      description: '',
+      thumbnail: null as File | null,
+      is_recurring: false,
+      recurrence_type: undefined as 'SPECIFIC_DAY' | 'DAILY' | 'WEEKDAYS' | 'WEEKENDS' | undefined,
+      day_of_week: undefined as number | undefined,
+      scheduled_time: '',
+      status: 'draft' as 'draft' | 'published',
+      tags: [] as Tag[],
+      external_link: '',
+      link_platform: '' as 'youtube' | 'twitter' | 'twitch' | 'rumble' | 'kick' | 'other' | ''
+   });
+   const [isSubmitting, setIsSubmitting] = useState(false);
+   const [formError, setFormError] = useState<string | null>(null);
+   const [formSuccess, setFormSuccess] = useState(false);
 
-      {/* 2. Earnings Summary */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Total Earnings Card */}
-        <div className="md:col-span-2 bg-ink text-white rounded-3xl p-8 relative overflow-hidden shadow-soft flex flex-col justify-between min-h-[240px]">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gold rounded-full opacity-10 blur-[60px]" />
-          
-          <div className="relative z-10 flex justify-between items-start">
+   // Edit show state
+   const [showToEdit, setShowToEdit] = useState<Show | null>(null);
+   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+   // Fetch creator profile
+   useEffect(() => {
+      const loadProfile = async () => {
+         if (!backendUser?.id || !accessToken) return;
+
+         try {
+            setIsLoadingProfile(true);
+            const profileData = await fetchUserProfile(backendUser.id, accessToken);
+            setProfile(profileData);
+         } catch (error) {
+            console.error('Failed to load profile:', error);
+         } finally {
+            setIsLoadingProfile(false);
+         }
+      };
+
+      loadProfile();
+   }, [backendUser?.id, accessToken]);
+
+   // Fetch creator's shows
+   useEffect(() => {
+      const loadShows = async () => {
+         if (!backendUser?.id || !accessToken) return;
+
+         try {
+            setIsLoadingShows(true);
+            const showsData = await fetchCreatorShows(backendUser.id, accessToken);
+            setShows(showsData);
+         } catch (error) {
+            console.error('Failed to load shows:', error);
+         } finally {
+            setIsLoadingShows(false);
+         }
+      };
+
+      loadShows();
+   }, [backendUser?.id, accessToken]);
+
+   // Fetch creator's events
+   useEffect(() => {
+      const loadEvents = async () => {
+         if (!backendUser?.id || !accessToken) return;
+
+         try {
+            setIsLoadingEvents(true);
+            const eventsData = await fetchCreatorEvents(backendUser.id, accessToken);
+            setEvents(eventsData);
+         } catch (error) {
+            console.error('Failed to load events:', error);
+         } finally {
+            setIsLoadingEvents(false);
+         }
+      };
+
+      loadEvents();
+   }, [backendUser?.id, accessToken]);
+
+
+   // Calculate creator stats from shows and events data
+   useEffect(() => {
+      if (!shows.length && !events.length && !profile) {
+         return;
+      }
+
+      try {
+         setIsLoadingStats(true);
+
+         // Calculate stats from existing data
+         const totalLikes = shows.reduce((sum, show) => sum + (show.like_count || 0), 0);
+         const totalComments = shows.reduce((sum, show) => sum + (show.comment_count || 0), 0);
+
+         const statsData: CreatorStats = {
+            total_views: 0, // We don't track views yet
+            total_likes: totalLikes,
+            total_comments: totalComments,
+            follower_count: profile?.follower_count || 0,
+            following_count: profile?.following_count || 0,
+            show_count: shows.length,
+            event_count: events.length,
+         };
+
+         setStats(statsData);
+      } catch (error) {
+         console.error('Failed to calculate stats:', error);
+      } finally {
+         setIsLoadingStats(false);
+      }
+   }, [shows, events, profile]);
+
+   // Fetch notifications
+   useEffect(() => {
+      const loadNotifications = async () => {
+         if (!accessToken) return;
+
+         try {
+            setIsLoadingNotifications(true);
+            const notificationsData = await fetchNotifications(accessToken);
+            // Ensure we always have an array
+            setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+         } catch (error) {
+            console.error('Failed to load notifications:', error);
+            setNotifications([]); // Set empty array on error
+         } finally {
+            setIsLoadingNotifications(false);
+         }
+      };
+
+      loadNotifications();
+   }, [accessToken]);
+
+   // Form handlers
+   const handleFormChange = (field: string, value: any) => {
+      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormError(null);
+   };
+
+   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+         setFormData(prev => ({ ...prev, thumbnail: e.target.files![0] }));
+      }
+   };
+
+   const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+
+      // Validation
+      if (!formData.title.trim() || formData.title.length < 3) {
+         setFormError('Title must be at least 3 characters');
+         return;
+      }
+
+      if (!formData.description.trim() || formData.description.length < 10) {
+         setFormError('Description must be at least 10 characters');
+         return;
+      }
+
+      if (formData.is_recurring) {
+         if (!formData.recurrence_type) {
+            setFormError('Please select a recurrence pattern');
+            return;
+         }
+         if (formData.recurrence_type === 'SPECIFIC_DAY' && formData.day_of_week === undefined) {
+            setFormError('Please select a day of the week for specific day recurrence');
+            return;
+         }
+         if (!formData.scheduled_time) {
+            setFormError('Please select a time for recurring shows');
+            return;
+         }
+      }
+
+      if (!accessToken) {
+         setFormError('You must be logged in to create a show');
+         return;
+      }
+
+      try {
+         setIsSubmitting(true);
+         setFormError(null);
+
+         const payload: CreateShowPayload = {
+            title: formData.title,
+            description: formData.description,
+            is_recurring: formData.is_recurring,
+            status: formData.status,
+         };
+
+         if (formData.thumbnail) {
+            payload.thumbnail = formData.thumbnail;
+         }
+
+         if (formData.tags.length > 0) {
+            payload.tag_ids = formData.tags.map(t => t.id);
+         }
+
+         if (formData.external_link) {
+            payload.external_link = formData.external_link;
+            payload.link_platform = formData.link_platform || undefined;
+         }
+
+         if (formData.is_recurring) {
+            payload.recurrence_type = formData.recurrence_type;
+            if (formData.recurrence_type === 'SPECIFIC_DAY') {
+               payload.day_of_week = formData.day_of_week;
+            }
+            payload.scheduled_time = formData.scheduled_time;
+         }
+
+         await createShow(payload, accessToken);
+
+         setFormSuccess(true);
+         setFormData({
+            title: '',
+            description: '',
+            thumbnail: null,
+            is_recurring: false,
+            recurrence_type: undefined,
+            day_of_week: undefined,
+            scheduled_time: '',
+            status: 'draft',
+            tags: [],
+            external_link: '',
+            link_platform: ''
+         });
+
+         // Refresh shows list
+         if (backendUser?.id) {
+            const showsData = await fetchCreatorShows(backendUser.id, accessToken);
+            setShows(showsData);
+         }
+
+         // Hide success message after 3 seconds
+         setTimeout(() => setFormSuccess(false), 3000);
+
+      } catch (error: any) {
+         setFormError(error.message || 'Failed to create show. Please try again.');
+      } finally {
+         setIsSubmitting(false);
+      }
+   };
+
+   const handleEditShow = (show: Show) => {
+      setShowToEdit(show);
+      setIsEditModalOpen(true);
+   };
+
+   const handleEditSuccess = async () => {
+      // Refresh shows list
+      if (backendUser?.id && accessToken) {
+         try {
+            const updated = await fetchCreatorShows(backendUser.id, accessToken);
+            setShows(updated);
+         } catch (error) {
+            console.error('Failed to refresh shows:', error);
+         }
+      }
+   };
+
+   if (!backendUser || backendUser.role !== 'creator') {
+      return (
+         <div className="min-h-screen pt-24 pb-20 container max-w-[1024px] mx-auto px-6 flex items-center justify-center">
+            <p className="text-inkLight">Creator access only. Please log in with a creator account.</p>
+         </div>
+      );
+   }
+
+   const formatNumber = (num: number): string => {
+      if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+      if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+      return num.toString();
+   };
+
+
+
+   return (
+      <div className="min-h-screen pt-24 pb-20 container max-w-[1024px] mx-auto px-6 space-y-8">
+
+         {/* Header */}
+         <div className="flex justify-between items-end">
             <div>
-              <p className="text-white/60 font-medium mb-1 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-gold" /> Total Earnings (This Month)
-              </p>
-              <h3 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-4">
-                $12,450<span className="text-white/40">.00</span>
-              </h3>
-              <div className="inline-flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full text-sm font-medium text-green-300">
-                <TrendingUp className="w-3 h-3" /> +18.4% vs last month
-              </div>
+               <h1 className="text-4xl font-bold text-ink mb-2">Creator Studio</h1>
+               <p className="text-inkLight font-medium">Manage your content, earnings, and community.</p>
             </div>
-            <button className="bg-gold text-white p-3 rounded-full hover:bg-white hover:text-ink transition-colors shadow-lg">
-               <ArrowUpRight className="w-6 h-6" />
+            <button
+               onClick={logout}
+               className="hidden md:flex items-center gap-2 text-sm font-bold text-ink hover:text-red-500 transition-colors"
+            >
+               <Settings className="w-4 h-4" /> Sign Out
             </button>
-          </div>
+         </div>
 
-          <div className="relative z-10 grid grid-cols-4 gap-4 items-end h-24 mt-8">
-            {[40, 65, 45, 80, 55, 90, 70, 100].map((h, i) => (
-              <div key={i} className="w-full bg-white/10 rounded-t-lg relative group">
-                <div 
-                  className="absolute bottom-0 w-full bg-gold rounded-t-lg transition-all duration-500"
-                  style={{ height: `${h}%` }}
-                />
-                <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-white text-ink text-xs font-bold px-2 py-1 rounded shadow-sm transition-opacity">
-                   ${h * 10}0
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Action / Breakdown */}
-        <div className="bg-white border border-borderSubtle rounded-3xl p-6 shadow-soft flex flex-col justify-center gap-4">
-           <h3 className="font-bold text-ink text-lg">Revenue Sources</h3>
-           <div className="space-y-4">
-              <div className="flex justify-between items-center text-sm">
-                 <span className="text-inkLight font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-gold" /> Subscriptions
-                 </span>
-                 <span className="font-bold text-ink">$8,200</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                 <span className="text-inkLight font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-ink" /> Tips
-                 </span>
-                 <span className="font-bold text-ink">$3,150</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                 <span className="text-inkLight font-medium flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-gray-300" /> Sponsors
-                 </span>
-                 <span className="font-bold text-ink">$1,100</span>
-              </div>
-           </div>
-           <button className="mt-2 w-full border border-borderSubtle rounded-xl py-3 text-sm font-bold text-ink hover:bg-surface transition-colors">
-              View Analytics
-           </button>
-        </div>
-      </section>
-
-      {/* 3. Show Scheduler */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Create Show Form */}
-        <div className="bg-white border border-borderSubtle rounded-3xl p-6 shadow-soft h-fit">
-           <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-gold/10 rounded-lg text-gold">
-                 <CalendarIcon className="w-5 h-5" />
-              </div>
-              <h3 className="text-xl font-bold text-ink">Schedule Show</h3>
-           </div>
-           
-           <form className="space-y-4">
-              <div>
-                 <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Show Title</label>
-                 <input type="text" placeholder="e.g. DeFi Deep Dive" className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors" />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Date</label>
-                    <input type="date" className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors" />
-                 </div>
-                 <div>
-                    <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Time (EST)</label>
-                    <input type="time" className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors" />
-                 </div>
-              </div>
-
-              {/* Recurrence Dropdown */}
-              <div>
-                 <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2 flex items-center gap-1">
-                    <Repeat className="w-3 h-3" /> Recurrence
-                 </label>
-                 <div className="relative">
-                    <select className="w-full appearance-none bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors text-ink cursor-pointer">
-                        <option value="none">None (One-time)</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="biweekly">Bi-Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="custom">Custom...</option>
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-inkLight pointer-events-none" />
-                 </div>
-              </div>
-
-              <div>
-                 <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Guest Email (Optional)</label>
-                 <div className="flex gap-2">
-                    <input type="email" placeholder="guest@example.com" className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors" />
-                    <button type="button" className="bg-surface border border-borderSubtle rounded-xl px-3 hover:bg-gold hover:text-white hover:border-gold transition-colors">
-                       <Plus className="w-5 h-5" />
-                    </button>
-                 </div>
-              </div>
-
-              <button className="w-full bg-gold-gradient text-white font-bold py-3.5 rounded-xl shadow-lg shadow-gold/20 hover:shadow-gold/40 hover:-translate-y-0.5 transition-all mt-2">
-                 Schedule Event
-              </button>
-           </form>
-        </div>
-
-        {/* Calendar / Upcoming List - UPDATED */}
-        <div className="lg:col-span-2 bg-white border border-borderSubtle rounded-3xl p-6 shadow-soft flex flex-col min-h-[500px]">
-           <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-              <div className="flex items-center gap-4">
-                 <h3 className="text-xl font-bold text-ink">Content Calendar</h3>
-                 <div className="flex items-center gap-2 bg-surface border border-borderSubtle rounded-lg p-1">
-                    <button 
-                      onClick={() => setCalendarView('month')}
-                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${calendarView === 'month' ? 'bg-white text-ink shadow-sm' : 'text-inkLight hover:text-ink'}`}
-                    >
-                      Month
-                    </button>
-                    <button 
-                      onClick={() => setCalendarView('week')}
-                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${calendarView === 'week' ? 'bg-white text-ink shadow-sm' : 'text-inkLight hover:text-ink'}`}
-                    >
-                      Week
-                    </button>
-                 </div>
-              </div>
-              
-              <div className="flex items-center gap-2 text-sm font-bold text-ink">
-                 <button className="p-1 hover:bg-surface rounded-full"><ChevronLeft className="w-4 h-4" /></button>
-                 <span>November 2024</span>
-                 <button className="p-1 hover:bg-surface rounded-full"><ChevronRight className="w-4 h-4" /></button>
-              </div>
-           </div>
-           
-           {calendarView === 'month' ? (
-             <div className="flex-1">
-                <div className="grid grid-cols-7 mb-2">
-                   {weekDays.map(d => (
-                      <div key={d} className="text-center text-xs font-bold text-inkLight uppercase tracking-wider py-2">
-                         {d}
-                      </div>
-                   ))}
-                </div>
-                <div className="grid grid-cols-7 grid-rows-5 gap-2 h-full min-h-[300px]">
-                   {/* Empty slots for start of month (assuming Nov starts on Fri for display purposes) */}
-                   {Array.from({length: 5}).map((_, i) => <div key={`empty-${i}`} className="bg-transparent hidden md:block" />)}
-                   
-                   {days.map((day) => {
-                      const show = getShowForDay(day);
-                      return (
-                        <div key={day} className="relative bg-surface border border-borderSubtle rounded-xl p-2 min-h-[60px] md:min-h-[80px] hover:border-gold/30 transition-colors group">
-                           <span className={`text-xs font-bold ${show ? 'text-ink' : 'text-inkLight/50'}`}>{day}</span>
-                           {show && (
-                              <div className={`mt-1 p-1.5 rounded-lg text-[10px] font-bold border truncate cursor-pointer shadow-sm
-                                ${show.status === 'Ready' ? 'bg-green-50 text-green-700 border-green-200' : 
-                                  show.status === 'Draft' ? 'bg-gray-100 text-gray-600 border-gray-200' : 
-                                  'bg-blue-50 text-blue-600 border-blue-200'}`}
-                              >
-                                 <div className="truncate hidden md:block">{show.time}</div>
-                                 <div className="truncate">{show.title}</div>
+         {/* 1. Profile Overview Card */}
+         <section className="bg-canvas border border-borderSubtle rounded-3xl p-6 md:p-8 shadow-soft relative overflow-hidden">
+            {isLoadingProfile ? (
+               <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-gold animate-spin" />
+               </div>
+            ) : (
+               <>
+                  <div className="flex flex-col md:flex-row items-center md:items-start gap-8 relative z-10">
+                     <div className="relative">
+                        <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-surface shadow-md overflow-hidden bg-surface">
+                           {profile?.profile_picture ? (
+                              <img src={profile.profile_picture} alt="Profile" className="w-full h-full object-cover" />
+                           ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gold/10">
+                                 <User className="w-16 h-16 text-gold" />
                               </div>
                            )}
                         </div>
-                      );
-                   })}
-                </div>
-             </div>
-           ) : (
-             <div className="flex-1 space-y-3">
-                {/* Week View List */}
-                {scheduledShows.map((show) => (
-                   <div key={show.id} className="flex items-center gap-4 p-4 border border-borderSubtle rounded-xl bg-surface/30 hover:bg-white hover:shadow-sm transition-all">
-                      <div className="flex flex-col items-center justify-center w-14 h-14 bg-white border border-borderSubtle rounded-xl shadow-sm">
-                         <span className="text-xs font-bold text-inkLight uppercase">Nov</span>
-                         <span className="text-lg font-bold text-ink">{show.day}</span>
-                      </div>
-                      <div className="flex-1">
-                         <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-ink">{show.title}</h4>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border
-                                ${show.status === 'Ready' ? 'bg-green-50 text-green-700 border-green-200' : 
-                                  show.status === 'Draft' ? 'bg-gray-100 text-gray-600 border-gray-200' : 
-                                  'bg-blue-50 text-blue-600 border-blue-200'}`}
-                            >
-                               {show.status}
-                            </span>
-                         </div>
-                         <div className="flex items-center gap-4 mt-1 text-xs text-inkLight font-medium">
-                            <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {show.time}</span>
-                            <span className="flex items-center gap-1"><Video className="w-3 h-3" /> Live Stream</span>
-                         </div>
-                      </div>
-                   </div>
-                ))}
-                <button className="w-full py-3 border border-dashed border-borderSubtle rounded-xl text-inkLight text-sm font-bold hover:text-gold hover:border-gold transition-colors flex items-center justify-center gap-2">
-                   <Plus className="w-4 h-4" /> Add Event to Week
-                </button>
-             </div>
-           )}
-        </div>
-      </section>
+                        {profile?.is_verified && (
+                           <div className="absolute bottom-1 right-1 bg-gold text-white p-1.5 rounded-full border-2 border-white shadow-sm">
+                              <Check className="w-4 h-4" />
+                           </div>
+                        )}
+                     </div>
 
-      {/* 4. Guest Requests & Notifications */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
-         {/* Guest Requests */}
-         <div className="bg-white border border-borderSubtle rounded-3xl p-6 shadow-soft h-full">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                 <Users className="w-5 h-5" />
-              </div>
-              <h3 className="text-xl font-bold text-ink">Guest Requests</h3>
-              <span className="bg-gold text-white text-xs font-bold px-2 py-0.5 rounded-full ml-auto">3 New</span>
-           </div>
+                     <div className="flex-1 text-center md:text-left">
+                        <h2 className="text-2xl font-bold text-ink flex items-center justify-center md:justify-start gap-2 mb-1">
+                           {profile?.username || backendUser.username}
+                           {profile?.is_verified && (
+                              <span className="bg-gold/10 text-gold text-xs px-2 py-0.5 rounded-full border border-gold/20 uppercase tracking-wider">Verified</span>
+                           )}
+                        </h2>
+                        <p className="text-inkLight font-medium mb-6">
+                           @{profile?.username || backendUser.username} • {profile?.bio || 'Creator'}
+                        </p>
 
-           <div className="space-y-4">
-              {[
-                 { name: "Alex Hormozi", topic: "Content Strategy", avatar: "https://picsum.photos/100/100?random=5" },
-                 { name: "Cathie Wood", topic: "ETF Approvals", avatar: "https://picsum.photos/100/100?random=6" }
-              ].map((req, i) => (
-                 <div key={i} className="flex items-center gap-4 p-4 border border-borderSubtle rounded-2xl bg-surface/50">
-                    <img src={req.avatar} alt={req.name} className="w-10 h-10 rounded-full" />
-                    <div className="flex-1">
-                       <h4 className="text-sm font-bold text-ink">{req.name}</h4>
-                       <p className="text-xs text-inkLight">Wants to discuss: <span className="font-medium">{req.topic}</span></p>
-                    </div>
-                    <div className="flex gap-2">
-                       <button className="w-8 h-8 rounded-full bg-white border border-borderSubtle flex items-center justify-center text-red-500 hover:bg-red-50 hover:border-red-200 transition-colors">
-                          <X className="w-4 h-4" />
-                       </button>
-                       <button className="w-8 h-8 rounded-full bg-ink text-white flex items-center justify-center hover:bg-green-500 transition-colors shadow-sm">
-                          <Check className="w-4 h-4" />
-                       </button>
-                    </div>
-                 </div>
-              ))}
-           </div>
-         </div>
+                        <div className="grid grid-cols-3 gap-4 md:gap-12 border-t border-borderSubtle pt-6">
+                           <div>
+                              <div className="text-2xl font-bold text-ink">
+                                 {formatNumber(profile?.follower_count || 0)}
+                              </div>
+                              <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Followers</div>
+                           </div>
+                           <div>
+                              <div className="text-2xl font-bold text-ink">
+                                 {formatNumber(stats?.total_views || 0)}
+                              </div>
+                              <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Total Views</div>
+                           </div>
+                           <div>
+                              <div className="text-2xl font-bold text-ink">
+                                 {stats?.show_count || shows.length}
+                              </div>
+                              <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Shows</div>
+                           </div>
+                        </div>
+                     </div>
 
-         {/* Notifications Feed */}
-         <div className="bg-white border border-borderSubtle rounded-3xl p-6 shadow-soft h-full flex flex-col">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
-                 <Bell className="w-5 h-5" />
-              </div>
-              <h3 className="text-xl font-bold text-ink">Notifications</h3>
-              <button className="ml-auto text-xs font-bold text-inkLight hover:text-ink">Mark all read</button>
-           </div>
+                     <div className="flex flex-col gap-3 min-w-[160px]">
+                        <button
+                           onClick={() => onNavigate('edit-profile')}
+                           className="bg-transparent border border-borderSubtle text-ink font-bold py-2.5 rounded-xl hover:border-gold hover:text-gold transition-colors shadow-sm"
+                        >
+                           Edit Profile
+                        </button>
+                        <button className="bg-canvas border border-borderSubtle text-ink font-bold py-2.5 rounded-xl hover:bg-surface transition-colors">
+                           View Channel
+                        </button>
+                     </div>
+                  </div>
 
-           <div className="space-y-4 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
-              {[
-                 { type: 'milestone', title: "New Milestone", msg: "You hit 85k subscribers!", time: "2h ago", icon: Trophy, color: "text-yellow-600 bg-yellow-50" },
-                 { type: 'like', title: "New Likes", msg: "Your video 'DeFi 101' received 500+ likes", time: "3h ago", icon: Heart, color: "text-red-500 bg-red-50" },
-                 { type: 'comment', title: "New Comment", msg: "Vitalik_fan commented: 'Great analysis!'", time: "4h ago", icon: MessageSquare, color: "text-blue-500 bg-blue-50" },
-                 { type: 'reminder', title: "Show Reminder", msg: "'Weekly Market Wrap-up' starts in 3h", time: "5h ago", icon: Clock, color: "text-purple-500 bg-purple-50" },
-                 { type: 'system', title: "System", msg: "Payout processed: $4,200", time: "1d ago", icon: DollarSign, color: "text-green-600 bg-green-50" },
-              ].map((notif, i) => (
-                 <div key={i} className="flex gap-4 p-3 rounded-2xl hover:bg-surface transition-colors cursor-pointer group">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border border-white shadow-sm ${notif.color}`}>
-                       <notif.icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                       <div className="flex justify-between items-start w-full">
-                          <h4 className="text-sm font-bold text-ink group-hover:text-gold transition-colors">{notif.title}</h4>
-                          <span className="text-[10px] text-inkLight font-semibold whitespace-nowrap">{notif.time}</span>
-                       </div>
-                       <p className="text-xs text-inkLight mt-0.5 leading-relaxed">{notif.msg}</p>
-                    </div>
-                 </div>
-              ))}
-           </div>
-         </div>
-      </section>
+                  {/* Background Decor */}
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-gold/5 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+               </>
+            )}
+         </section>
 
-    </div>
-  );
+         {/* 2. Video Metrics Cards */}
+         <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <StatsCard
+               icon={Heart}
+               label="Total Likes"
+               value={formatNumber(stats?.total_likes || 0)}
+               color="text-red-500 bg-red-50"
+               isLoading={isLoadingStats}
+            />
+            <StatsCard
+               icon={MessageSquare}
+               label="Total Comments"
+               value={formatNumber(stats?.total_comments || 0)}
+               color="text-blue-500 bg-blue-50"
+               isLoading={isLoadingStats}
+            />
+            <StatsCard
+               icon={BarChart3}
+               label="Total Views"
+               value={formatNumber(stats?.total_views || 0)}
+               color="text-green-500 bg-green-50"
+               isLoading={isLoadingStats}
+            />
+         </section>
+
+         {/* 3. Show Scheduler & Calendar */}
+         <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Create Show Form */}
+            <div className="bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft h-fit">
+               <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-gold/10 rounded-lg text-gold">
+                     <CalendarIcon className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xl font-bold text-ink">Create Show</h3>
+               </div>
+
+               {/* Success Message */}
+               {formSuccess && (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-medium flex items-center gap-2">
+                     <Check className="w-4 h-4" />
+                     Show created successfully!
+                  </div>
+               )}
+
+               {/* Error Message */}
+               {formError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium flex items-center gap-2">
+                     <X className="w-4 h-4" />
+                     {formError}
+                  </div>
+               )}
+
+               <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Show Title *</label>
+                     <input
+                        type="text"
+                        placeholder="e.g. DeFi Deep Dive"
+                        value={formData.title}
+                        onChange={(e) => handleFormChange('title', e.target.value)}
+                        className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors"
+                     />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Description *</label>
+                     <textarea
+                        placeholder="Describe your show..."
+                        value={formData.description}
+                        onChange={(e) => handleFormChange('description', e.target.value)}
+                        rows={3}
+                        className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors resize-none"
+                     />
+                  </div>
+
+                  {/* Thumbnail Upload */}
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Thumbnail (Optional)</label>
+                     <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        className="w-full text-sm text-inkLight file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gold file:text-white hover:file:bg-gold/90 cursor-pointer"
+                     />
+                     {formData.thumbnail && (
+                        <p className="text-xs text-green-600 mt-2">Selected: {formData.thumbnail.name}</p>
+                     )}
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Tags</label>
+                     <TagInput
+                        selectedTags={formData.tags}
+                        onChange={(tags) => setFormData({ ...formData, tags })}
+                        placeholder="Add tags (Bitcoin, Stacks, etc.)"
+                     />
+                  </div>
+
+                  {/* External Link (Watch Now) */}
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">
+                        Watch Now Link <span className="text-inkLight/50 normal-case">(Optional)</span>
+                     </label>
+                     <div className="space-y-3">
+                        <select
+                           value={formData.link_platform}
+                           onChange={(e) => setFormData({ ...formData, link_platform: e.target.value as any })}
+                           className="w-full bg-canvas border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors"
+                        >
+                           <option value="">Select Platform</option>
+                           <option value="youtube">YouTube</option>
+                           <option value="twitter">Twitter/X</option>
+                           <option value="twitch">Twitch</option>
+                           <option value="rumble">Rumble</option>
+                           <option value="kick">Kick</option>
+                           <option value="other">Other</option>
+                        </select>
+                        <input
+                           type="url"
+                           value={formData.external_link}
+                           onChange={(e) => setFormData({ ...formData, external_link: e.target.value })}
+                           placeholder="https://youtube.com/watch?v=..."
+                           className="w-full bg-canvas border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors"
+                        />
+                     </div>
+                  </div>
+
+                  {/* Recurring Toggle */}
+                  <div>
+                     <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                           type="checkbox"
+                           checked={formData.is_recurring}
+                           onChange={(e) => handleFormChange('is_recurring', e.target.checked)}
+                           className="w-4 h-4 text-gold border-gray-300 rounded focus:ring-gold"
+                        />
+                        <span className="text-sm font-bold text-ink flex items-center gap-1">
+                           <Repeat className="w-3 h-3" /> Recurring Show
+                        </span>
+                     </label>
+                  </div>
+
+                  {/* Recurring Options - Only show if recurring is checked */}
+                  {formData.is_recurring && (
+                     <div className="space-y-4 p-4 bg-surface/50 rounded-xl border border-borderSubtle">
+                        {/* Recurrence Pattern */}
+                        <div>
+                           <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Recurrence Pattern *</label>
+                           <div className="grid grid-cols-2 gap-2">
+                              <button
+                                 type="button"
+                                 onClick={() => setFormData({ ...formData, recurrence_type: 'DAILY', day_of_week: undefined })}
+                                 className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'DAILY'
+                                    ? 'bg-gold text-white'
+                                    : 'bg-canvas border border-borderSubtle text-inkLight hover:border-gold'
+                                    }`}
+                              >
+                                 Daily
+                              </button>
+                              <button
+                                 type="button"
+                                 onClick={() => setFormData({ ...formData, recurrence_type: 'WEEKDAYS', day_of_week: undefined })}
+                                 className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'WEEKDAYS'
+                                    ? 'bg-gold text-white'
+                                    : 'bg-canvas border border-borderSubtle text-inkLight hover:border-gold'
+                                    }`}
+                              >
+                                 Weekdays
+                              </button>
+                              <button
+                                 type="button"
+                                 onClick={() => setFormData({ ...formData, recurrence_type: 'WEEKENDS', day_of_week: undefined })}
+                                 className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'WEEKENDS'
+                                    ? 'bg-gold text-white'
+                                    : 'bg-canvas border border-borderSubtle text-inkLight hover:border-gold'
+                                    }`}
+                              >
+                                 Weekends
+                              </button>
+                              <button
+                                 type="button"
+                                 onClick={() => setFormData({ ...formData, recurrence_type: 'SPECIFIC_DAY' })}
+                                 className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'SPECIFIC_DAY'
+                                    ? 'bg-gold text-white'
+                                    : 'bg-canvas border border-borderSubtle text-inkLight hover:border-gold'
+                                    }`}
+                              >
+                                 Specific Day
+                              </button>
+                           </div>
+                        </div>
+
+                        {/* Day of Week - Only for Specific Day */}
+                        {formData.recurrence_type === 'SPECIFIC_DAY' && (
+                           <div>
+                              <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Day of Week *</label>
+                              <div className="relative">
+                                 <select
+                                    value={formData.day_of_week ?? ''}
+                                    onChange={(e) => handleFormChange('day_of_week', parseInt(e.target.value))}
+                                    className="w-full appearance-none bg-canvas border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors text-ink cursor-pointer"
+                                 >
+                                    <option value="">Select day</option>
+                                    <option value="0">Monday</option>
+                                    <option value="1">Tuesday</option>
+                                    <option value="2">Wednesday</option>
+                                    <option value="3">Thursday</option>
+                                    <option value="4">Friday</option>
+                                    <option value="5">Saturday</option>
+                                    <option value="6">Sunday</option>
+                                 </select>
+                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-inkLight pointer-events-none" />
+                              </div>
+                           </div>
+                        )}
+
+                        {/* Time */}
+                        <div>
+                           <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Time *</label>
+                           <input
+                              type="time"
+                              value={formData.scheduled_time}
+                              onChange={(e) => handleFormChange('scheduled_time', e.target.value)}
+                              className="w-full bg-canvas border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors"
+                           />
+                        </div>
+                     </div>
+                  )}
+
+                  {/* Status Toggle */}
+                  <div>
+                     <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">Status</label>
+                     <div className="flex gap-2">
+                        <button
+                           type="button"
+                           onClick={() => handleFormChange('status', 'draft')}
+                           className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${formData.status === 'draft'
+                              ? 'bg-transparent border border-ink text-ink'
+                              : 'bg-surface text-inkLight hover:bg-surface'
+                              }`}
+                        >
+                           Draft
+                        </button>
+                        <button
+                           type="button"
+                           onClick={() => handleFormChange('status', 'published')}
+                           className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${formData.status === 'published'
+                              ? 'bg-gold text-white'
+                              : 'bg-surface text-inkLight hover:bg-surface'
+                              }`}
+                        >
+                           Published
+                        </button>
+                     </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                     type="submit"
+                     disabled={isSubmitting}
+                     className="w-full bg-gold-gradient text-white font-bold py-3.5 rounded-xl shadow-lg shadow-gold/20 hover:shadow-gold/40 hover:-translate-y-0.5 transition-all mt-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                     {isSubmitting ? (
+                        <>
+                           <Loader2 className="w-4 h-4 animate-spin" />
+                           Creating...
+                        </>
+                     ) : (
+                        <>
+                           <Plus className="w-4 h-4" />
+                           Create Show
+                        </>
+                     )}
+                  </button>
+               </form>
+            </div>
+
+            {/* RealTime Calendar View */}
+            <div className="lg:col-span-2 bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft">
+               <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-ink">Content Calendar</h3>
+                  <div className="flex items-center gap-2 text-sm font-bold text-ink">
+                     <button
+                        onClick={() => setCurrentCalendarDate(prev => subMonths(prev, 1))}
+                        className="p-1 hover:bg-surface rounded-full transition-colors"
+                     >
+                        <ChevronLeft className="w-4 h-4" />
+                     </button>
+                     <span>{format(currentCalendarDate, 'MMMM yyyy')}</span>
+                     <button
+                        onClick={() => setCurrentCalendarDate(prev => addMonths(prev, 1))}
+                        className="p-1 hover:bg-surface rounded-full transition-colors"
+                     >
+                        <ChevronRight className="w-4 h-4" />
+                     </button>
+                  </div>
+               </div>
+
+               <div className="min-h-[400px]">
+                  <RealTimeCalendar
+                     shows={shows}
+                     events={events}
+                     currentDate={currentCalendarDate}
+                     onDateClick={(date) => {
+                        // Pre-fill the form date on click
+                        setFormData(prev => ({ ...prev, scheduled_time: date.toISOString().split('T')[0] }));
+                     }}
+                     onShowClick={(show) => {
+                        // Open edit modal when a show is clicked
+                        handleEditShow(show);
+                     }}
+                  />
+               </div>
+            </div>
+         </section>
+
+         {/* 4. Guest Requests & Notifications */}
+         <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Guest Requests */}
+            <div className="bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft">
+               <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                     <Users className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xl font-bold text-ink">Guest Requests</h3>
+                  <span className="bg-gold text-white text-xs font-bold px-2 py-0.5 rounded-full ml-auto">0</span>
+               </div>
+
+               <div className="text-center py-8">
+                  <Users className="w-12 h-12 text-inkLight mx-auto mb-4" />
+                  <p className="text-inkLight text-sm">No pending guest requests</p>
+                  <p className="text-xs text-inkLight mt-2">Guest requests will appear here</p>
+               </div>
+            </div>
+
+            {/* Notifications Feed */}
+            <div className="bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft">
+               <div className="flex items-center gap-2 mb-6">
+                  <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                     <Bell className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xl font-bold text-ink">Notifications</h3>
+                  {notifications.filter(n => !n.is_read).length > 0 && (
+                     <span className="bg-gold text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                        {notifications.filter(n => !n.is_read).length}
+                     </span>
+                  )}
+                  {notifications.length > 0 && (
+                     <button
+                        onClick={async () => {
+                           if (!accessToken) return;
+                           try {
+                              await markAllNotificationsRead(accessToken);
+                              setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                           } catch (error) {
+                              console.error('Failed to mark all as read:', error);
+                           }
+                        }}
+                        className="ml-auto text-xs font-bold text-inkLight hover:text-ink"
+                     >
+                        Mark all read
+                     </button>
+                  )}
+               </div>
+
+               <div className="space-y-4">
+                  {isLoadingNotifications ? (
+                     <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-gold animate-spin" />
+                     </div>
+                  ) : notifications.length === 0 ? (
+                     <div className="text-center py-8">
+                        <Bell className="w-12 h-12 text-inkLight mx-auto mb-4" />
+                        <p className="text-inkLight text-sm">No notifications yet</p>
+                     </div>
+                  ) : (
+                     notifications.slice(0, 5).map((notification) => {
+                        const getNotificationContent = () => {
+                           switch (notification.notification_type) {
+                              case 'follow':
+                                 return {
+                                    icon: Users,
+                                    color: 'text-blue-500 bg-blue-50',
+                                    title: 'New Follower',
+                                    message: `${notification.actor.username} started following you`
+                                 };
+                              case 'like':
+                                 return {
+                                    icon: Heart,
+                                    color: 'text-red-500 bg-red-50',
+                                    title: 'New Like',
+                                    message: `${notification.actor.username} liked your content`
+                                 };
+                              case 'comment':
+                                 return {
+                                    icon: MessageSquare,
+                                    color: 'text-green-500 bg-green-50',
+                                    title: 'New Comment',
+                                    message: `${notification.actor.username} commented on your content`
+                                 };
+                              default:
+                                 return {
+                                    icon: Bell,
+                                    color: 'text-inkLight bg-surface 50',
+                                    title: 'Notification',
+                                    message: 'You have a new notification'
+                                 };
+                           }
+                        };
+
+                        const content = getNotificationContent();
+                        const timeAgo = new Date(notification.created_at).toLocaleDateString();
+
+                        return (
+                           <div
+                              key={notification.id}
+                              onClick={async () => {
+                                 if (!notification.is_read && accessToken) {
+                                    try {
+                                       await markNotificationRead(notification.id, accessToken);
+                                       setNotifications(prev =>
+                                          prev.map(n => n.id === notification.id ? { ...n, is_read: true } : n)
+                                       );
+                                    } catch (error) {
+                                       console.error('Failed to mark as read:', error);
+                                    }
+                                 }
+                              }}
+                              className={`flex gap-4 p-3 rounded-2xl transition-colors cursor-pointer group ${notification.is_read ? 'hover:bg-surface' : 'bg-gold/5 hover:bg-gold/10 border border-gold/20'
+                                 }`}
+                           >
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${content.color}`}>
+                                 <content.icon className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1">
+                                 <div className="flex justify-between items-start">
+                                    <h4 className="text-sm font-bold text-ink group-hover:text-gold transition-colors">
+                                       {content.title}
+                                    </h4>
+                                    <span className="text-[10px] text-inkLight font-semibold">{timeAgo}</span>
+                                 </div>
+                                 <p className="text-xs text-inkLight mt-0.5">{content.message}</p>
+                              </div>
+                              {!notification.is_read && (
+                                 <div className="w-2 h-2 bg-gold rounded-full shrink-0 mt-2" />
+                              )}
+                           </div>
+                        );
+                     })
+                  )}
+               </div>
+            </div>
+         </section>
+
+         {/* 5. Recent Shows with Stats */}
+         <section className="bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft">
+            <div className="flex justify-between items-center mb-6">
+               <h3 className="text-xl font-bold text-ink">Your Shows</h3>
+               <button className="text-xs font-bold text-gold hover:underline">View All</button>
+            </div>
+
+            {isLoadingShows ? (
+               <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-gold animate-spin" />
+               </div>
+            ) : shows.length === 0 ? (
+               <div className="text-center py-12">
+                  <Video className="w-12 h-12 text-inkLight mx-auto mb-4" />
+                  <p className="text-inkLight text-sm">No shows yet.</p>
+                  <p className="text-xs text-inkLight mt-2">Create your first show to get started!</p>
+               </div>
+            ) : (
+               <div className="space-y-4">
+                  {shows.slice(0, 5).map(show => (
+                     <div key={show.id} className="flex items-center gap-4 p-4 border border-borderSubtle rounded-xl hover:bg-surface transition-colors cursor-pointer">
+                        <div className="w-20 aspect-video rounded-lg overflow-hidden bg-surface shrink-0">
+                           {show.thumbnail ? (
+                              <img src={show.thumbnail} alt={show.title} className="w-full h-full object-cover" />
+                           ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gold/10">
+                                 <Video className="w-6 h-6 text-gold" />
+                              </div>
+                           )}
+                        </div>
+                        <div className="flex-1">
+                           <h4 className="font-bold text-ink text-sm mb-1">{show.title}</h4>
+                           <div className="flex items-center gap-4 text-xs text-inkLight">
+                              <span className="flex items-center gap-1">
+                                 <Heart className="w-3 h-3" /> {show.like_count}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                 <MessageSquare className="w-3 h-3" /> {show.comment_count}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${show.status === 'published' ? 'bg-green-50 text-green-700' :
+                                 show.status === 'draft' ? 'bg-surface 100 text-inkLight' :
+                                    'bg-yellow-50 text-yellow-700'
+                                 }`}>
+                                 {show.status}
+                              </span>
+                           </div>
+                        </div>
+                        <button
+                           onClick={() => handleEditShow(show)}
+                           className="text-inkLight hover:text-gold transition-colors"
+                           title="Edit show"
+                        >
+                           <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                     </div>
+                  ))}
+               </div>
+            )}
+         </section>
+
+         {/* Edit Show Modal */}
+         {showToEdit && (
+            <EditShowModal
+               show={showToEdit}
+               isOpen={isEditModalOpen}
+               onClose={() => {
+                  setIsEditModalOpen(false);
+                  setShowToEdit(null);
+               }}
+               onSuccess={handleEditSuccess}
+            />
+         )}
+
+      </div>
+   );
 };
+
+// Helper Component for Stats Cards
+const StatsCard: React.FC<{
+   icon: React.ElementType;
+   label: string;
+   value: string;
+   color: string;
+   isLoading: boolean;
+}> = ({ icon: Icon, label, value, color, isLoading }) => (
+   <div className="bg-canvas border border-borderSubtle rounded-2xl p-6 shadow-sm">
+      {isLoading ? (
+         <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-6 h-6 text-gold animate-spin" />
+         </div>
+      ) : (
+         <>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-4 ${color}`}>
+               <Icon className="w-5 h-5" />
+            </div>
+            <div className="text-2xl font-bold text-ink mb-1">{value}</div>
+            <div className="text-xs text-inkLight font-medium">{label}</div>
+         </>
+      )}
+   </div>
+);
+
+// Helper Component for Notifications
+const NotificationItem: React.FC<{
+   icon: React.ElementType;
+   color: string;
+   title: string;
+   message: string;
+   time: string;
+}> = ({ icon: Icon, color, title, message, time }) => (
+   <div className="flex gap-4 p-3 rounded-2xl hover:bg-surface transition-colors cursor-pointer group">
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${color}`}>
+         <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex-1">
+         <div className="flex justify-between items-start">
+            <h4 className="text-sm font-bold text-ink group-hover:text-gold transition-colors">{title}</h4>
+            <span className="text-[10px] text-inkLight font-semibold">{time}</span>
+         </div>
+         <p className="text-xs text-inkLight mt-0.5">{message}</p>
+      </div>
+   </div>
+);
+
+
+

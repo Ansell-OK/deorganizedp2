@@ -3,7 +3,7 @@ import { Gift, Zap } from 'lucide-react';
 
 export const EarnPointsBanner: React.FC = () => {
   return (
-    <div className="bg-white border border-borderSubtle rounded-2xl p-8 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8 shadow-soft">
+    <div className="bg-canvas border border-borderSubtle rounded-2xl p-8 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8 shadow-soft">
       {/* Background radial glow */}
       <div className="absolute -left-20 -top-20 w-64 h-64 bg-gold/10 rounded-full blur-[80px] pointer-events-none" />
       

@@ -1,73 +1,65 @@
-
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './lib/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Sponsors } from './components/Sponsors';
 import { UpcomingShows } from './components/UpcomingShows';
-import { UpcomingEvents } from './components/UpcomingEvents';
 import { CreatorBanner } from './components/CreatorBanner';
-import { CreatorSpotlight } from './components/CreatorSpotlight';
-import { EarnPointsBanner } from './components/EarnPointsBanner';
-import { NewsGrid } from './components/NewsGrid';
 import { Footer } from './components/Footer';
 import { ShowsDiscovery } from './components/ShowsDiscovery';
-import { EventsDiscovery } from './components/EventsDiscovery';
 import { CreatorsDiscovery } from './components/CreatorsDiscovery';
-import { Newsroom } from './components/Newsroom';
 import { CreatorDashboard } from './components/CreatorDashboard';
 import { UserDashboard } from './components/UserDashboard';
-import { NewsDetail } from './components/NewsDetail';
 import { ShowDetail } from './components/ShowDetail';
-import { EventDetail } from './components/EventDetail';
 import { CreatorDetail } from './components/CreatorDetail';
+import { ProfileSetup } from './components/ProfileSetup';
+import { EditProfile } from './components/EditProfile';
 
-type PageView = 'home' | 'shows' | 'events' | 'creators' | 'news' | 'dashboard' | 'user-profile' | 'news-detail' | 'show-detail' | 'event-detail' | 'creator-detail';
 
-const App: React.FC = () => {
+type PageView = 'home' | 'shows' | 'creators' | 'dashboard' | 'user-profile' | 'register' | 'show-detail' | 'creator-detail' | 'edit-profile';
+
+const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<PageView>('home');
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
+  const { backendUser, isBackendAuthenticated } = useAuth();
 
-  // Enhanced navigation handler
-  const handleNavigate = (page: string, id?: string | number) => {
-    setCurrentView(page as PageView);
-    if (id) setSelectedId(id);
+  const handleNavigate = (page: PageView, id?: string | number) => {
+    setCurrentView(page);
+    if (id !== undefined) {
+      setSelectedId(id);
+    }
     window.scrollTo(0, 0);
   };
 
   const renderContent = () => {
     switch (currentView) {
       case 'user-profile':
-        return <UserDashboard />;
+        return <UserDashboard onNavigate={handleNavigate} />;
       case 'dashboard':
-        return <CreatorDashboard />;
-        
+        return <CreatorDashboard onNavigate={handleNavigate} />;
+
       // Discovery Pages
       case 'shows':
         return <ShowsDiscovery onNavigate={handleNavigate} />;
-      case 'events':
-        return <EventsDiscovery onNavigate={handleNavigate} />;
       case 'creators':
         return <CreatorsDiscovery onNavigate={handleNavigate} />;
-      case 'news':
-        return <Newsroom onNavigate={handleNavigate} />;
-        
+
       // Detail Pages
-      case 'news-detail':
-        return <NewsDetail onNavigate={handleNavigate} />;
       case 'show-detail':
-        return <ShowDetail onNavigate={handleNavigate} />;
-      case 'event-detail':
-        return <EventDetail onNavigate={handleNavigate} />;
+        return selectedId ? <ShowDetail onNavigate={handleNavigate} showId={String(selectedId)} /> : <div>Show not found</div>;
       case 'creator-detail':
-        return <CreatorDetail onNavigate={handleNavigate} />;
-        
+        return selectedId ? <CreatorDetail onNavigate={handleNavigate} creatorId={Number(selectedId)} /> : <div>Creator not found</div>;
+      case 'edit-profile':
+        return <EditProfile onNavigate={handleNavigate} />;
+      case 'register':
+        return <ProfileSetup onNavigate={handleNavigate} />;
       case 'home':
       default:
         return (
           <>
-            <Hero />
+            <Hero onNavigate={handleNavigate} />
             <Sponsors />
-            
+
             {/* Editorial & Shows Section */}
             <section className="py-20 relative z-10">
               <UpcomingShows onNavigate={handleNavigate} />
@@ -75,22 +67,17 @@ const App: React.FC = () => {
 
             {/* Community & Ecosystem */}
             <section className="py-12 space-y-24 container mx-auto px-6 max-w-[1280px]">
-              <CreatorBanner />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                 <UpcomingEvents onNavigate={handleNavigate} />
-                 <CreatorSpotlight onNavigate={handleNavigate} />
-              </div>
-              <EarnPointsBanner />
-            </section>
-
-            {/* Latest News */}
-            <section className="py-20 bg-surface border-t border-borderSubtle">
-              <NewsGrid onNavigate={handleNavigate} />
+              <CreatorBanner
+                onNavigate={handleNavigate}
+                userRole={backendUser?.role || null}
+                isAuthenticated={isBackendAuthenticated}
+              />
             </section>
           </>
         );
     }
   };
+
 
   return (
     <div className="min-h-screen bg-canvas font-sans selection:bg-gold/20 selection:text-ink overflow-x-hidden text-ink">
@@ -98,8 +85,16 @@ const App: React.FC = () => {
       <main>
         {renderContent()}
       </main>
-      <Footer />
+      <Footer onNavigate={handleNavigate} />
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 

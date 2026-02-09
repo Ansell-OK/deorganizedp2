@@ -1,65 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Deorganized | Crypto Media & News</title>
-    <meta name="description" content="Next-gen crypto media platform." />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              midnight: '#0F172A', // Keeping for specific dark elements
-              canvas: '#FFFFFF',
-              surface: '#F8FAFC',
-              gold: '#D97706', // Slightly darker gold for light mode text/borders
-              goldLight: '#FBBF24',
-              yellow: '#F59E0B',
-              borderSubtle: '#E2E8F0',
-              ink: '#0F172A',
-              inkLight: '#64748B',
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deorganized | Crypto Media & News</title>
+  <meta name="description" content="Next-gen crypto media platform." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            midnight: '#0F172A',
+            gold: {
+              DEFAULT: '#D97706',
+              light: '#FBBF24',
             },
-            fontFamily: {
-              sans: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
+            yellow: '#F59E0B',
+            // Use CSS variables for dark mode reactivity
+            ink: {
+              DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
+              light: 'rgb(var(--color-ink-light) / <alpha-value>)',
             },
-            backgroundImage: {
-              'gold-gradient': 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
-              'gold-glow': 'radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.15) 0%, rgba(255, 255, 255, 0) 70%)',
-            },
-            boxShadow: {
-              'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
-              'glow': '0 0 15px rgba(217, 119, 6, 0.15)',
-            }
+            inkLight: 'rgb(var(--color-ink-light) / <alpha-value>)',
+            canvas: 'rgb(var(--color-canvas) / <alpha-value>)',
+            surface: 'rgb(var(--color-surface) / <alpha-value>)',
+            borderSubtle: 'rgb(var(--color-border-subtle) / <alpha-value>)',
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
+          },
+          backgroundImage: {
+            'gold-gradient': 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+            'gold-glow': 'radial-gradient(circle at 50% 50%, rgba(251, 191, 36, 0.15) 0%, rgba(255, 255, 255, 0) 70%)',
+          },
+          boxShadow: {
+            'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+            'glow': '0 0 15px rgba(217, 119, 6, 0.15)',
           }
         }
       }
-    </script>
-    <style>
-      body {
-        background-color: #FFFFFF;
-        color: #0F172A;
-      }
-      /* Custom scrollbar for premium feel - Light Mode */
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #F1F5F9;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #CBD5E1;
-        border: 1px solid #E2E8F0;
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94A3B8;
-      }
-    </style>
+    }
+  </script>
+  <style>
+    body {
+      background-color: #FFFFFF;
+      color: #0F172A;
+    }
+
+    /* Custom scrollbar for premium feel - Light Mode */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #F1F5F9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border: 1px solid #E2E8F0;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+  </style>
   <script type="importmap">
 {
   "imports": {
@@ -71,10 +85,32 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <!-- Theme initialization - prevents FOUC -->
+  <script>
+      (function () {
+        try {
+          const theme = localStorage.getItem('theme') ||
+            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+          const root = document.documentElement;
+          if (theme === 'dark') {
+            root.classList.add('dark');
+            root.setAttribute('data-theme', 'dark');
+          } else {
+            root.classList.remove('dark');
+            root.setAttribute('data-theme', 'light');
+          }
+        } catch (e) {
+          console.error('Theme initialization error:', e);
+        }
+      })();
+  </script>
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body>
-    <div id="root"></div>
+
+<body>
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

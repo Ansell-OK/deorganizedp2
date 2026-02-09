@@ -1,6 +1,8 @@
-
-import React, { useState, useEffect } from 'react';
-import { Menu, X, Globe, User, LayoutDashboard } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Menu, X, Globe, User, Wallet, Moon, Sun } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
+import { useTheme } from '../lib/ThemeContext';
+import { fetchNotifications } from '../lib/api';
 
 interface NavbarProps {
   onNavigate?: (page: string) => void;
@@ -10,6 +12,99 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  // Track if we've already checked this wallet to prevent infinite loops
+  const walletCheckAttempted = useRef<string | null>(null);
+
+  const {
+    isWalletConnected,
+    walletAddress,
+    bnsName,
+    connectWallet,
+    isBackendAuthenticated,
+    backendUser,
+    logout,
+    isAuthenticating,
+    handleWalletConnect,
+    accessToken
+  } = useAuth();
+
+  const { isDarkMode, toggleDarkMode } = useTheme();
+
+  // Handle wallet connection with routing
+  const handleConnect = async () => {
+    // First connect wallet
+    connectWallet();
+
+    // Wait for wallet to connect, then check/authenticate
+    // This will be handled by an effect
+  };
+
+  // Auto-authenticate when wallet connects (only once per wallet address)
+  useEffect(() => {
+    // Only proceed if:
+    // 1. Wallet is connected
+    // 2. We have an address
+    // 3. User is not already authenticated
+    // 4. Not currently authenticating
+    // 5. We haven't already checked this specific wallet address
+    // 6. We're not already on the register page (prevents loop)
+    if (
+      isWalletConnected &&
+      walletAddress &&
+      !isBackendAuthenticated &&
+      !isAuthenticating &&
+      walletCheckAttempted.current !== walletAddress &&
+      currentPage !== 'register'  // KEY FIX: Don't re-check if already on register page
+    ) {
+      // Mark this wallet as checked
+      walletCheckAttempted.current = walletAddress;
+
+      handleWalletConnect(
+        // On new user - navigate to setup
+        () => {
+          if (onNavigate) onNavigate('register');
+        },
+        // On existing user - navigate to their dashboard
+        () => {
+          if (onNavigate && backendUser) {
+            onNavigate(backendUser.role === 'creator' ? 'dashboard' : 'user-profile');
+          }
+        }
+      );
+    }
+  }, [isWalletConnected, walletAddress, isBackendAuthenticated, isAuthenticating, currentPage, onNavigate, handleWalletConnect, backendUser]);
+
+  // Fetch unread notifications count
+  useEffect(() => {
+    const loadNotifications = async () => {
+      if (isBackendAuthenticated && accessToken) {
+        try {
+          const notifications = await fetchNotifications(accessToken);
+          // Count ALL unread notifications (likes, comments, follows)
+          const unreadCount = notifications.filter(n => !n.is_read).length;
+          setUnreadNotifications(unreadCount);
+        } catch (error) {
+          console.error('Failed to fetch notifications:', error);
+        }
+      } else {
+        setUnreadNotifications(0);
+      }
+    };
+
+    loadNotifications();
+    // Poll for new notifications every 30 seconds
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [isBackendAuthenticated, accessToken]);
+
+  // Reset wallet check flag when user logs out or becomes authenticated
+  useEffect(() => {
+    if (isBackendAuthenticated || !isWalletConnected) {
+      walletCheckAttempted.current = null;
+    }
+  }, [isBackendAuthenticated, isWalletConnected]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -27,31 +122,41 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
   };
 
   const navLinks = [
-    { label: 'News', id: 'news' },
     { label: 'Shows', id: 'shows' },
-    { label: 'Events', id: 'events' },
-    { label: 'Creators', id: 'creators' },
-    { label: 'Market', id: 'home' } // Keeping Market as home placeholder for now
+    { label: 'Creators', id: 'creators' }
   ];
+
+  // Format wallet address for display - show BNS name if available
+  const getWalletDisplay = () => {
+    if (bnsName) return bnsName;
+    if (walletAddress) return `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+    return 'Wallet';
+  };
 
   return (
     <nav
-      className={`fixed top-0 w-full z-50 transition-all duration-300 border-b ${
-        isScrolled
-          ? 'bg-canvas/80 backdrop-blur-md border-borderSubtle py-4 shadow-sm'
-          : 'bg-transparent border-transparent py-6'
-      }`}
+      className={`fixed top-0 w-full z-50 transition-all duration-300 border-b ${isScrolled
+        ? 'bg-canvas/80 backdrop-blur-md border-borderSubtle py-4 shadow-sm'
+        : 'bg-transparent border-transparent py-6'
+        }`}
     >
       <div className="max-w-[1280px] mx-auto px-6 flex items-center justify-between">
         {/* Logo */}
-        <div 
-          className="flex items-center gap-2 cursor-pointer group" 
+        <div
+          className="flex items-center gap-3 cursor-pointer group"
           onClick={() => handleNavClick('home')}
         >
-          <div className="w-8 h-8 rounded-full bg-gold-gradient flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform">
-            <Globe className="w-5 h-5" />
-          </div>
-          <span className="text-xl font-bold text-ink tracking-tight">
+          <img
+            src="/images/logo.png"
+            alt="Deorganized Logo"
+            className="h-8 w-auto group-hover:scale-105 transition-transform"
+            onError={(e) => {
+              // Fallback to text logo if image fails
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+          <span className="text-xl font-bold text-ink tracking-tight hidden">
             De<span className="text-gold">organized</span>
           </span>
         </div>
@@ -62,37 +167,88 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
             <button
               key={item.label}
               onClick={() => handleNavClick(item.id)}
-              className={`text-sm font-medium transition-colors ${
-                 currentPage === item.id 
-                 ? 'text-gold' 
-                 : 'text-inkLight hover:text-gold'
-              }`}
+              className={`text-sm font-medium transition-colors ${currentPage === item.id
+                ? 'text-gold'
+                : 'text-inkLight hover:text-gold'
+                }`}
             >
               {item.label}
             </button>
           ))}
         </div>
 
-        {/* CTA */}
+        {/* CTA - Auth Buttons */}
         <div className="hidden md:flex items-center gap-4">
-          <button 
-             onClick={() => handleNavClick('dashboard')}
-             className={`flex items-center gap-2 text-sm font-semibold transition-colors ${
-               currentPage === 'dashboard' ? 'text-gold' : 'text-ink hover:text-gold'
-             }`}
+          {/* Dark Mode Toggle */}
+          <button
+            onClick={toggleDarkMode}
+            className="w-10 h-10 rounded-full bg-surface border border-borderSubtle flex items-center justify-center text-inkLight hover:text-gold hover:border-gold/30 transition-all shadow-sm"
+            aria-label="Toggle dark mode"
           >
-             <LayoutDashboard className="w-4 h-4" />
-             Studio
+            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
-          <button 
-            onClick={() => handleNavClick('user-profile')}
-            className={`bg-white border hover:border-gold/50 hover:bg-surface px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-sm ${
-              currentPage === 'user-profile' ? 'border-gold text-gold ring-1 ring-gold/20' : 'border-borderSubtle text-ink'
-            }`}
-          >
-            <User className="w-4 h-4" />
-            My Profile
-          </button>
+
+          {isBackendAuthenticated && backendUser ? (
+            <>
+              {/* Dashboard link for creators */}
+              {backendUser.role === 'creator' && (
+                <button
+                  onClick={() => handleNavClick('dashboard')}
+                  className={`relative text-sm font-medium transition-colors ${currentPage === 'dashboard' ? 'text-gold' : 'text-inkLight hover:text-gold'
+                    }`}
+                >
+                  Studio
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -top-1 -right-3 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Profile button */}
+              <button
+                onClick={() => handleNavClick('user-profile')}
+                className={`bg-canvas border hover:border-gold/50 hover:bg-surface px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-sm ${currentPage === 'user-profile' ? 'border-gold text-gold ring-1 ring-gold/20' : 'border-borderSubtle text-ink'
+                  }`}
+              >
+                <User className="w-4 h-4" />
+                {backendUser.username}
+              </button>
+
+              {/* Logout */}
+              <button
+                onClick={logout}
+                className="text-sm font-medium text-inkLight hover:text-gold transition-colors"
+              >
+                Logout
+              </button>
+            </>
+          ) : isWalletConnected && walletAddress ? (
+            <>
+              {/* Wallet connected but not registered */}
+              <div className="flex items-center gap-2 px-4 py-2 bg-surface border border-borderSubtle rounded-full">
+                <Wallet className="w-4 h-4 text-gold" />
+                <span className="text-sm font-medium text-ink">{getWalletDisplay()}</span>
+              </div>
+              <button
+                onClick={() => handleNavClick('register')}
+                className="bg-gold hover:bg-gold/90 text-white px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 shadow-md"
+              >
+                Complete Setup
+              </button>
+            </>
+          ) : (
+            /* Connect Wallet button */
+            <button
+              onClick={handleConnect}
+              disabled={isAuthenticating}
+              className="bg-gold hover:bg-gold/90 text-white px-6 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Wallet className="w-4 h-4" />
+              {isAuthenticating ? 'Connecting...' : 'Connect Wallet'}
+            </button>
+          )}
         </div>
 
         {/* Mobile Toggle */}
@@ -111,31 +267,54 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
             <button
               key={item.label}
               onClick={() => handleNavClick(item.id)}
-              className={`text-lg font-medium text-left ${
-                currentPage === item.id ? 'text-gold' : 'text-ink hover:text-gold'
-              }`}
+              className={`text-lg font-medium text-left ${currentPage === item.id ? 'text-gold' : 'text-ink hover:text-gold'
+                }`}
             >
               {item.label}
             </button>
           ))}
           <div className="h-px bg-borderSubtle my-2" />
-          <button
-             onClick={() => handleNavClick('dashboard')}
-             className={`text-lg font-medium text-left ${
-               currentPage === 'dashboard' ? 'text-gold' : 'text-ink hover:text-gold'
-             }`}
-          >
-             Creator Studio
-          </button>
-          <button
-             onClick={() => handleNavClick('user-profile')}
-             className={`text-lg font-medium text-left ${
-               currentPage === 'user-profile' ? 'text-gold' : 'text-ink hover:text-gold'
-             }`}
-          >
-             My Profile
-          </button>
-          
+
+          {isBackendAuthenticated && backendUser ? (
+            <>
+              {backendUser.role === 'creator' && (
+                <button
+                  onClick={() => handleNavClick('dashboard')}
+                  className="text-lg font-medium text-left text-ink hover:text-gold"
+                >
+                  Creator Studio
+                </button>
+              )}
+              <button
+                onClick={() => handleNavClick('user-profile')}
+                className="text-lg font-medium text-left text-ink hover:text-gold"
+              >
+                Profile ({backendUser.username})
+              </button>
+              <button
+                onClick={logout}
+                className="text-lg font-medium text-left text-inkLight hover:text-gold"
+              >
+                Logout
+              </button>
+            </>
+          ) : isWalletConnected ? (
+            <button
+              onClick={() => handleNavClick('register')}
+              className="bg-gold hover:bg-gold/90 text-white px-6 py-3 rounded-full text-lg font-semibold"
+            >
+              Complete Setup
+            </button>
+          ) : (
+            <button
+              onClick={handleConnect}
+              disabled={isAuthenticating}
+              className="bg-gold hover:bg-gold/90 text-white px-6 py-3 rounded-full text-lg font-semibold flex items-center gap-2 justify-center disabled:opacity-50"
+            >
+              <Wallet className="w-5 h-5" />
+              {isAuthenticating ? 'Connecting...' : 'Connect Wallet'}
+            </button>
+          )}
         </div>
       )}
     </nav>

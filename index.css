@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-gold: 217 119 6;
+    --color-ink: 31 41 55;
+    --color-ink-light: 107 114 128;
+    --color-canvas: 249 250 251;
+    --color-surface: 243 244 246;
+    --color-border-subtle: 229 231 235;
+  }
+
+  .dark {
+    --color-ink: 249 250 251;
+    --color-ink-light: 209 213 219;
+    --color-canvas: 17 24 39;
+    --color-surface: 31 41 55;
+    --color-border-subtle: 55 65 81;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
