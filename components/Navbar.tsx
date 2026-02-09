@@ -147,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
           onClick={() => handleNavClick('home')}
         >
           <img
-            src="/images/logo.png"
+            src="/logo.png"
             alt="Deorganized Logo"
             className="h-8 w-auto group-hover:scale-105 transition-transform"
             onError={(e) => {
