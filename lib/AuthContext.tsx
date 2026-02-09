@@ -94,7 +94,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     storeUser(result.user);
                     setAccessToken(result.tokens.access);
                     setBackendUser(result.user);
-                    onExistingUser?.();
+
+                    // Auto-refresh to update UI with authenticated state
+                    window.location.reload();
                 }
             }
         } catch (error: any) {
@@ -132,6 +134,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             storeUser(result.user);
             setAccessToken(result.tokens.access);
             setBackendUser(result.user);
+
+            // Auto-refresh to update UI with authenticated state
+            window.location.reload();
         } catch (error: any) {
             console.error('❌ Setup failed:', error);
             setAuthError(error.message || 'Setup failed');
