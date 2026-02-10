@@ -13,6 +13,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onNavigate }) => {
 
     const [formData, setFormData] = useState({
         username: '',
+        display_name: '',
         bio: '',
         website: '',
         twitter: '',
@@ -22,6 +23,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onNavigate }) => {
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
 
     // Load pending wallet address on mount
@@ -51,6 +53,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onNavigate }) => {
         e.preventDefault();
         setIsSubmitting(true);
         setSubmitError(null);
+        setFieldErrors({});
 
         try {
             console.log('Submitting setup form:', formData);
@@ -64,7 +67,19 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onNavigate }) => {
 
         } catch (error: any) {
             console.error('Setup failed:', error);
-            setSubmitError(error.message || 'Failed to complete setup. Please try again.');
+
+            // Parse field-specific errors from API response
+            if (error.response?.data && typeof error.response.data === 'object') {
+                const errors: { [key: string]: string } = {};
+                Object.keys(error.response.data).forEach(key => {
+                    const errorValue = error.response.data[key];
+                    errors[key] = Array.isArray(errorValue) ? errorValue[0] : errorValue;
+                });
+                setFieldErrors(errors);
+                setSubmitError('Please fix the errors below.');
+            } else {
+                setSubmitError(error.message || 'Failed to complete setup. Please try again.');
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -196,7 +211,28 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({ onNavigate }) => {
                                 name="username"
                                 value={formData.username}
                                 onChange={handleInputChange}
-                                placeholder="Enter your username (optional)"
+                                placeholder="e.g. johndoe123 (letters, numbers, underscores)"
+                                className={`w-full pl-12 pr-4 py-3 bg-surface border rounded-xl text-ink placeholder:text-inkLight/50 focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all ${fieldErrors.username ? 'border-red-500' : 'border-borderSubtle'}`}
+                            />
+                        </div>
+                        {fieldErrors.username && (
+                            <p className="text-red-500 text-sm mt-1 font-medium">{fieldErrors.username}</p>
+                        )}
+                    </div>
+
+                    {/* Display Name */}
+                    <div className="mb-6">
+                        <label className="block text-sm font-bold text-ink mb-2">
+                            Display Name <span className="text-inkLight text-xs font-normal">(optional - shown to others)</span>
+                        </label>
+                        <div className="relative">
+                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-inkLight" />
+                            <input
+                                type="text"
+                                name="display_name"
+                                value={formData.display_name}
+                                onChange={handleInputChange}
+                                placeholder="e.g. John Doe"
                                 className="w-full pl-12 pr-4 py-3 bg-surface border border-borderSubtle rounded-xl text-ink placeholder:text-inkLight/50 focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all"
                             />
                         </div>
