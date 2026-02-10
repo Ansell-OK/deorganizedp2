@@ -188,10 +188,7 @@ export const CreatorsDiscovery: React.FC<CreatorsDiscoveryProps> = ({ onNavigate
                   </div>
                 )}
 
-                <button className="w-full bg-surface border border-borderSubtle text-ink font-bold py-2.5 rounded-xl hover:bg-gold hover:text-white hover:border-gold transition-all flex items-center justify-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Follow
-                </button>
+
               </div>
             </div>
           </motion.div>

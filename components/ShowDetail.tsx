@@ -473,11 +473,7 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
                     {isAuthenticated ? (
                         <form onSubmit={handleAddComment} className="mb-8">
                             <div className="flex gap-4">
-                                <img
-                                    src={userData?.profile_picture || "https://picsum.photos/100/100"}
-                                    alt="Your avatar"
-                                    className="w-10 h-10 rounded-full border-2 border-borderSubtle"
-                                />
+
                                 <div className="flex-1">
                                     <textarea
                                         value={commentText}

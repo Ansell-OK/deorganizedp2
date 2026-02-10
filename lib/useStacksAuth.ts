@@ -54,7 +54,6 @@ export const useStacksAuth = (): UseStacksAuthReturn => {
 
     // Sign in with wallet
     const signIn = () => {
-        console.log('🔵 [STACKS AUTH] signIn() called');
         // @ts-ignore - connect options type mismatch but works at runtime
         connect({
             appDetails: {
@@ -62,59 +61,41 @@ export const useStacksAuth = (): UseStacksAuthReturn => {
                 icon: window.location.origin + '/logo.png',
             },
             onFinish: async () => {
-                console.log('🟢 [STACKS AUTH] onFinish callback triggered!');
-                try {
-                    // Get connection data from localStorage
-                    const localData = getLocalStorage();
-                    console.log('🔍 [STACKS AUTH] localData:', localData);
+                const localData = getLocalStorage();
 
-                    if (localData?.addresses?.stx?.[0]?.address) {
-                        const address = localData.addresses.stx[0].address;
-                        console.log('🔍 [STACKS AUTH] Address found:', address);
+                if (localData?.addresses?.stx?.[0]?.address) {
+                    const address = localData.addresses.stx[0].address;
+                    const bnsName = await fetchBNSName(address);
 
-                        const bnsName = await fetchBNSName(address);
-                        console.log('🔍 [STACKS AUTH] BNS name:', bnsName);
+                    setUserData({ address, bnsName });
+                    setIsAuthenticated(true);
 
-                        setUserData({ address, bnsName });
-                        setIsAuthenticated(true);
-                        console.log('🔍 [STACKS AUTH] State updated, about to reload...');
-
-                        // Small delay to ensure state is saved
-                        setTimeout(() => {
-                            console.log('✅ [STACKS AUTH] EXECUTING RELOAD NOW!');
-                            window.location.reload();
-                        }, 500);
-                    } else {
-                        console.error('❌ [STACKS AUTH] No address found in localData!');
-                    }
-                } catch (error) {
-                    console.error('❌ [STACKS AUTH] Error in onFinish:', error);
+                    // Reload to update UI
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
                 }
             },
             onCancel: () => {
-                console.log('❌ [STACKS AUTH] User cancelled wallet connection');
+                // User cancelled
             },
         });
 
         // WORKAROUND: onFinish callback doesn't always fire reliably  
         // Poll to detect when connection completes
-        console.log('⏰ [STACKS AUTH] Starting connection polling...');
         let pollCount = 0;
-        const maxPolls = 20; // Poll for up to 10 seconds
+        const maxPolls = 50; // Poll for up to 25 seconds
 
         const pollInterval = setInterval(async () => {
             pollCount++;
-            console.log(`🔍 [STACKS AUTH] Poll ${pollCount}/${maxPolls} - checking connection...`);
 
             const connected = await isConnected();
             const localData = getLocalStorage();
 
             if (connected && localData?.addresses?.stx?.[0]?.address && !isAuthenticated) {
-                console.log('✅ [STACKS AUTH] Connection detected via polling - reloading!');
                 clearInterval(pollInterval);
                 window.location.reload();
             } else if (pollCount >= maxPolls) {
-                console.log('⏱️ [STACKS AUTH] Polling timeout - connection may have failed or was cancelled');
                 clearInterval(pollInterval);
             }
         }, 500); // Poll every 500ms
@@ -130,9 +111,6 @@ export const useStacksAuth = (): UseStacksAuthReturn => {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('user_profile');
-
-        // Note: Using custom navigation instead of react-router-dom
-        // console.log('Wallet disconnected');
     };
 
     return {
