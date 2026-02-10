@@ -65,9 +65,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
       walletCheckAttempted.current = walletAddress;
 
       handleWalletConnect(
-        // On new user - navigate to setup
+        // On new user - navigate to setup then reload to ensure it takes effect
         () => {
-          if (onNavigate) onNavigate('register');
+          if (onNavigate) {
+            onNavigate('register');
+            // Small delay to allow navigation to initiate, then reload
+            setTimeout(() => {
+              window.location.reload();
+            }, 100);
+          }
         },
         // On existing user - reload page to show authenticated state
         () => {
