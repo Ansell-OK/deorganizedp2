@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Heart, MessageCircle, Share2, Play, Calendar, Clock, User, Bell, UserPlus, UserCheck, ExternalLink, Hash } from 'lucide-react';
+import { ArrowLeft, Heart, MessageCircle, Share2, Play, Calendar, Clock, User, Users, Bell, UserPlus, UserCheck, ExternalLink, Hash } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext';
 import { requireAuth } from '../lib/walletHelpers';
+
 import {
     API_BASE_URL,
     fetchShowById,
@@ -15,9 +16,11 @@ import {
     checkIsFollowing,
     trackShare,
     deleteShow,
+    createGuestRequest,
     CONTENT_TYPES,
     Show,
-    Comment
+    Comment,
+    checkExistingGuestRequest
 } from '../lib/api';
 
 interface ShowDetailProps {
@@ -36,7 +39,15 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
     const [submittingComment, setSubmittingComment] = useState(false);
     const [showSharePopup, setShowSharePopup] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [showSuccessToast, setShowSuccessToast] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+    const [showErrorToast, setShowErrorToast] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
     const [commentToDelete, setCommentToDelete] = useState<number | null>(null);
+    const [showGuestRequestModal, setShowGuestRequestModal] = useState(false);
+    const [guestRequestMessage, setGuestRequestMessage] = useState('');
+    const [submittingGuestRequest, setSubmittingGuestRequest] = useState(false);
+    const [hasExistingRequest, setHasExistingRequest] = useState(false);
 
     // Get auth from AuthContext
     const { isBackendAuthenticated, backendUser, accessToken, connectWallet } = useAuth();
@@ -81,6 +92,18 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
             setLoading(false);
         }
     };
+
+    // Check if user already requested guest spot
+    useEffect(() => {
+        const checkRequest = async () => {
+            if (accessToken && show) {
+                const hasRequest = await checkExistingGuestRequest(show.id, accessToken);
+                setHasExistingRequest(hasRequest);
+            }
+        };
+        checkRequest();
+    }, [accessToken, show]);
+
 
     const handleLikeToggle = async () => {
         if (!isAuthenticated) {
@@ -204,6 +227,63 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
         }
     };
 
+    // Convert platform URLs to embed URLs
+    const getEmbedUrl = (url: string, platform?: string): string | null => {
+        if (!url) return null;
+
+        try {
+            // YouTube
+            if (platform === 'youtube' || url.includes('youtube.com') || url.includes('youtu.be')) {
+                let videoId = '';
+                if (url.includes('youtube.com/watch')) {
+                    videoId = new URL(url).searchParams.get('v') || '';
+                } else if (url.includes('youtu.be/')) {
+                    videoId = url.split('youtu.be/')[1]?.split(/[?&]/)[0] || '';
+                } else if (url.includes('youtube.com/live/')) {
+                    videoId = url.split('youtube.com/live/')[1]?.split(/[?&]/)[0] || '';
+                }
+                if (videoId) return `https://www.youtube.com/embed/${videoId}`;
+            }
+
+            // Twitch
+            if (platform === 'twitch' || url.includes('twitch.tv')) {
+                let channelName = '';
+                if (url.includes('twitch.tv/')) {
+                    const parts = url.split('twitch.tv/')[1]?.split(/[?&/]/);
+                    channelName = parts?.[0] || '';
+                }
+                if (channelName) {
+                    // Get current domain for parent parameter (required by Twitch)
+                    const currentDomain = window.location.hostname;
+                    return `https://player.twitch.tv/?channel=${channelName}&parent=${currentDomain}`;
+                }
+            }
+
+            // Kick
+            if (platform === 'kick' || url.includes('kick.com')) {
+                let channelName = '';
+                if (url.includes('kick.com/')) {
+                    channelName = url.split('kick.com/')[1]?.split(/[?&/]/)[0] || '';
+                }
+                if (channelName) return `https://player.kick.com/${channelName}`;
+            }
+
+            // Rumble
+            if (platform === 'rumble' || url.includes('rumble.com')) {
+                let videoId = '';
+                if (url.includes('rumble.com/')) {
+                    videoId = url.split('rumble.com/')[1]?.split(/[?&-]/)[0] || '';
+                }
+                if (videoId) return `https://rumble.com/embed/${videoId}/`;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Error generating embed URL:', error);
+            return null;
+        }
+    };
+
     const handleDeleteShow = async () => {
         if (!isAuthenticated || !accessToken) {
             return;
@@ -221,6 +301,38 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
             console.error('Failed to delete show:', error);
             alert('Failed to delete show. Please try again.');
             setShowDeleteModal(false);
+        }
+    };
+
+    const handleGuestRequest = async () => {
+        if (!isAuthenticated || !accessToken || !show) {
+            connectWallet();
+            return;
+        }
+
+        if (userData?.role !== 'creator') {
+            setErrorMessage('Only creators can request guest appearances');
+            setShowErrorToast(true);
+            setTimeout(() => setShowErrorToast(false), 3000);
+            return;
+        }
+
+        try {
+            setSubmittingGuestRequest(true);
+            await createGuestRequest(show.id, guestRequestMessage, accessToken);
+            setShowGuestRequestModal(false);
+            setGuestRequestMessage('');
+            setToastMessage('Guest request sent successfully! 🎉');
+            setShowSuccessToast(true);
+            setTimeout(() => setShowSuccessToast(false), 3000);
+            setHasExistingRequest(true);
+        } catch (error: any) {
+            console.error('Failed to send guest request:', error);
+            setErrorMessage(error.message || 'Failed to send guest request. Please try again.');
+            setShowErrorToast(true);
+            setTimeout(() => setShowErrorToast(false), 3000);
+        } finally {
+            setSubmittingGuestRequest(false);
         }
     };
 
@@ -365,6 +477,37 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
                                 </div>
                             )}
 
+                            {/* Guests Section */}
+                            {show.guests && show.guests.length > 0 && (
+                                <div className="bg-surface px-4 py-3 rounded-xl border border-borderSubtle">
+                                    <h3 className="text-sm font-bold text-ink mb-2 flex items-center gap-2">
+                                        <UserPlus className="w-4 h-4 text-purple-500" />
+                                        Featured Guests ({show.guests.length})
+                                    </h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        {show.guests.map((guest) => (
+                                            <div
+                                                key={guest.id}
+                                                className="flex items-center gap-2 bg-canvas px-3 py-2 rounded-full hover:bg-gold-50 transition-all cursor-pointer"
+                                                onClick={() => onNavigate?.('creator-detail', guest.id)}
+                                            >
+                                                <img
+                                                    src={guest.profile_picture || '/default-avatar.png'}
+                                                    alt={guest.username}
+                                                    className="w-6 h-6 rounded-full object-cover"
+                                                />
+                                                <span className="text-sm font-semibold text-ink">{guest.username}</span>
+                                                {guest.is_verified && (
+                                                    <svg className="w-4 h-4 text-gold" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Action Buttons */}
                             <div className="flex flex-wrap gap-4 pt-4">
                                 {show.external_link ? (
@@ -395,6 +538,24 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
                                     </button>
                                 )}
 
+                                {/* Request Guest Spot Button - Only for other creators */}
+                                {isAuthenticated && userData?.role === 'creator' && userData?.id !== show.creator.id && (
+                                    hasExistingRequest ? (
+                                        <div className="bg-purple-100 border-2 border-purple-500 text-purple-700 font-bold px-6 py-4 rounded-full flex items-center gap-2">
+                                            <Clock className="w-5 h-5" />
+                                            Request Pending
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setShowGuestRequestModal(true)}
+                                            className="bg-purple-500 hover:bg-purple-600 text-white font-bold px-6 py-4 rounded-full transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                                        >
+                                            <UserPlus className="w-5 h-5" />
+                                            Request Guest Spot
+                                        </button>
+                                    )
+                                )}
+
                                 <button className="bg-canvas border border-borderSubtle text-ink font-bold px-6 py-4 rounded-full hover:bg-surface transition-all flex items-center gap-2 shadow-sm">
                                     <Bell className="w-5 h-5" />
                                     Subscribe
@@ -402,14 +563,35 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
                             </div>
                         </div>
 
-                        {/* Right: Thumbnail */}
+                        {/* Right: Thumbnail or Video Embed */}
                         <div className="hidden lg:block">
-                            <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl border border-borderSubtle">
-                                <img
-                                    src={show.thumbnail || "https://picsum.photos/800/450"}
-                                    alt={show.title}
-                                    className="w-full h-full object-cover"
-                                />
+                            <div className="aspect-video rounded-2xl overflow-hidden shadow-2xl border border-borderSubtle bg-surface">
+                                {(() => {
+                                    const embedUrl = show.external_link ? getEmbedUrl(show.external_link, show.link_platform) : null;
+
+                                    if (embedUrl) {
+                                        // Show embedded video/stream
+                                        return (
+                                            <iframe
+                                                src={embedUrl}
+                                                className="w-full h-full"
+                                                frameBorder="0"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                                title={show.title}
+                                            />
+                                        );
+                                    } else {
+                                        // Fallback to thumbnail
+                                        return (
+                                            <img
+                                                src={show.thumbnail || "https://picsum.photos/800/450"}
+                                                alt={show.title}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        );
+                                    }
+                                })()}
                             </div>
                         </div>
                     </div>
@@ -648,8 +830,96 @@ export const ShowDetail: React.FC<ShowDetailProps> = ({ onNavigate, showId }) =>
                     </motion.div>
                 </div>
             )}
+
+            {/* Guest Request Modal */}
+            {showGuestRequestModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-canvas rounded-3xl shadow-2xl max-w-md w-full p-8 border border-borderSubtle"
+                    >
+                        {/* Icon */}
+                        <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <UserPlus className="w-8 h-8 text-purple-600" />
+                        </div>
+
+                        {/* Title */}
+                        <h3 className="text-2xl font-bold text-ink text-center mb-2">
+                            Request Guest Spot
+                        </h3>
+
+                        {/* Message */}
+                        <p className="text-inkSubtle text-center mb-6">
+                            Send a request to appear as a guest on "{show?.title}"
+                        </p>
+
+                        {/* Message Input */}
+                        <textarea
+                            value={guestRequestMessage}
+                            onChange={(e) => setGuestRequestMessage(e.target.value)}
+                            placeholder="Add a message to introduce yourself... (optional)"
+                            className="w-full p-4 border border-borderSubtle rounded-xl resize-none focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all font-medium text-ink bg-surface mb-6"
+                            rows={4}
+                            maxLength={500}
+                        />
+                        <div className="text-xs text-inkLight text-right mb-4">
+                            {guestRequestMessage.length}/500 characters
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowGuestRequestModal(false);
+                                    setGuestRequestMessage('');
+                                }}
+                                disabled={submittingGuestRequest}
+                                className="flex-1 px-6 py-3 bg-surface text-ink font-semibold rounded-full hover:bg-borderSubtle transition-all disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleGuestRequest}
+                                disabled={submittingGuestRequest}
+                                className="flex-1 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-full transition-all shadow-lg disabled:opacity-50"
+                            >
+                                {submittingGuestRequest ? 'Sending...' : 'Send Request'}
+                            </button>
+                        </div>
+                    </motion.div>
+                    {/* Success Toast */}
+                    {showSuccessToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 50 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 50 }}
+                            className="fixed bottom-8 right-8 bg-green-500 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="font-bold">{toastMessage}</span>
+                        </motion.div>
+                    )}
+
+                    {/* Error Toast */}
+                    {showErrorToast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 50 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 50 }}
+                            className="fixed bottom-8 right-8 bg-red-500 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="font-bold">{errorMessage}</span>
+                        </motion.div>
+                    )}
+
+                </div>
+            )}
         </div>
     );
 };
-
-

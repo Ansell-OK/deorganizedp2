@@ -17,12 +17,17 @@ import {
    fetchNotifications,
    markNotificationRead,
    markAllNotificationsRead,
+   fetchShowByPk,
+   getReceivedGuestRequests,
+   acceptGuestRequest,
+   declineGuestRequest,
    CreateShowPayload,
    Show,
    Event,
    CreatorStats,
    UserProfile,
    Notification,
+   GuestRequest,
    Tag
 } from '../lib/api';
 import { RealTimeCalendar } from './RealTimeCalendar';
@@ -35,13 +40,17 @@ interface CreatorDashboardProps {
 
 export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }) => {
    const { backendUser, accessToken, logout } = useAuth();
+   const [showSuccessToast, setShowSuccessToast] = useState(false);
+   const [toastMessage, setToastMessage] = useState('');
+   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
    // Data states
-   const [profile, setProfile] = useState<User | null>(null);
+   const [profile, setProfile] = useState<UserProfile | null>(null);
    const [shows, setShows] = useState<Show[]>([]);
    const [events, setEvents] = useState<Event[]>([]);
    const [stats, setStats] = useState<CreatorStats | null>(null);
    const [notifications, setNotifications] = useState<Notification[]>([]);
+   const [guestRequests, setGuestRequests] = useState<GuestRequest[]>([]);
 
    // Loading states
    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -132,6 +141,22 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
       loadEvents();
    }, [backendUser?.id, accessToken]);
 
+   // Fetch guest requests
+   useEffect(() => {
+      const loadGuestRequests = async () => {
+         if (!accessToken) return;
+
+         try {
+            const requests = await getReceivedGuestRequests(accessToken);
+            setGuestRequests(requests.filter(r => r.status === 'pending'));
+         } catch (error) {
+            console.error('Failed to load guest requests:', error);
+         }
+      };
+
+      loadGuestRequests();
+   }, [accessToken]);
+
 
    // Calculate creator stats from shows and events data
    useEffect(() => {
@@ -145,9 +170,11 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
          // Calculate stats from existing data
          const totalLikes = shows.reduce((sum, show) => sum + (show.like_count || 0), 0);
          const totalComments = shows.reduce((sum, show) => sum + (show.comment_count || 0), 0);
+         const totalShares = shows.reduce((sum, show) => sum + (show.share_count || 0), 0);
 
          const statsData: CreatorStats = {
             total_views: 0, // We don't track views yet
+            total_shares: totalShares,
             total_likes: totalLikes,
             total_comments: totalComments,
             follower_count: profile?.follower_count || 0,
@@ -392,9 +419,9 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                            </div>
                            <div>
                               <div className="text-2xl font-bold text-ink">
-                                 {formatNumber(stats?.total_views || 0)}
+                                 {formatNumber(stats?.total_shares || 0)}
                               </div>
-                              <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Total Views</div>
+                              <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Total Shares</div>
                            </div>
                            <div>
                               <div className="text-2xl font-bold text-ink">
@@ -751,15 +778,96 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                      <Users className="w-5 h-5" />
                   </div>
                   <h3 className="text-xl font-bold text-ink">Guest Requests</h3>
-                  <span className="bg-gold text-white text-xs font-bold px-2 py-0.5 rounded-full ml-auto">0</span>
+                  {guestRequests.length > 0 && (
+                     <span className="bg-gold text-white text-xs font-bold px-2 py-0.5 rounded-full ml-auto">
+                        {guestRequests.length}
+                     </span>
+                  )}
                </div>
 
-               <div className="text-center py-8">
-                  <Users className="w-12 h-12 text-inkLight mx-auto mb-4" />
-                  <p className="text-inkLight text-sm">No pending guest requests</p>
-                  <p className="text-xs text-inkLight mt-2">Guest requests will appear here</p>
-               </div>
+               {guestRequests.length === 0 ? (
+                  <div className="text-center py-8">
+                     <Users className="w-12 h-12 text-inkLight mx-auto mb-4" />
+                     <p className="text-inkLight text-sm">No pending guest requests</p>
+                     <p className="text-xs text-inkLight mt-2">Guest requests will appear here</p>
+                  </div>
+               ) : (
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                     {guestRequests.map((request) => (
+                        <div
+                           key={request.id}
+                           className="bg-surface rounded-xl p-4 border border-borderSubtle hover:border-purple-500/30 transition-all"
+                        >
+                           <div className="flex items-start gap-3">
+                              <img
+                                 src={request.requester.profile_picture || '/default-avatar.png'}
+                                 alt={request.requester.username}
+                                 className="w-10 h-10 rounded-full object-cover"
+                              />
+                              <div className="flex-1 min-w-0">
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <h4 className="font-bold text-ink text-sm">{request.requester.username}</h4>
+                                    {request.requester.is_verified && (
+                                       <svg className="w-3.5 h-3.5 text-gold flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                       </svg>
+                                    )}
+                                 </div>
+                                 <p className="text-xs text-inkSubtle">
+                                    Wants to be a guest on <span className="font-semibold text-ink">{request.show.title}</span>
+                                 </p>
+                                 {request.message && (
+                                    <p className="text-xs text-inkLight mt-2 italic line-clamp-2">"{request.message}"</p>
+                                 )}
+                                 <div className="flex gap-2 mt-3">
+                                    <button
+                                       onClick={async () => {
+                                          if (!accessToken) return;
+                                          try {
+                                             await acceptGuestRequest(request.id, accessToken);
+                                             setGuestRequests(prev => prev.filter(r => r.id !== request.id));
+                                             setToastMessage('Guest request accepted! ✅');
+                                             setToastType('success');
+                                             setShowSuccessToast(true);
+                                             setTimeout(() => setShowSuccessToast(false), 3000);
+                                          } catch (error) {
+                                             console.error('Failed to accept:', error);
+                                             setToastMessage('Failed to accept request');
+                                             setToastType('error');
+                                             setShowSuccessToast(true);
+                                             setTimeout(() => setShowSuccessToast(false), 3000);
+                                          }
+                                       }}
+                                       className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-all flex items-center justify-center gap-1"
+                                    >
+                                       <Check className="w-3 h-3" />
+                                       Accept
+                                    </button>
+                                    <button
+                                       onClick={async () => {
+                                          if (!accessToken) return;
+                                          try {
+                                             await declineGuestRequest(request.id, accessToken);
+                                             setGuestRequests(prev => prev.filter(r => r.id !== request.id));
+                                          } catch (error) {
+                                             console.error('Failed to decline:', error);
+                                             alert('Failed to decline request.');
+                                          }
+                                       }}
+                                       className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-all flex items-center justify-center gap-1"
+                                    >
+                                       <X className="w-3 h-3" />
+                                       Decline
+                                    </button>
+                                 </div>
+                              </div>
+                           </div>
+                        </div>
+                     ))}
+                  </div>
+               )}
             </div>
+
 
             {/* Notifications Feed */}
             <div className="bg-canvas border border-borderSubtle rounded-3xl p-6 shadow-soft">
@@ -826,12 +934,33 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                                     title: 'New Comment',
                                     message: `${notification.actor.username} commented on your content`
                                  };
+                              case 'guest_request':
+                                 return {
+                                    icon: Users,
+                                    color: 'text-purple-500 bg-purple-50',
+                                    title: 'Guest Request',
+                                    message: notification.message || `${notification.actor.username} wants to be on your show`
+                                 };
+                              case 'guest_accepted':
+                                 return {
+                                    icon: Check,
+                                    color: 'text-green-500 bg-green-50',
+                                    title: 'Guest Request Accepted',
+                                    message: `${notification.actor.username} accepted your guest request`
+                                 };
+                              case 'guest_declined':
+                                 return {
+                                    icon: X,
+                                    color: 'text-red-500 bg-red-50',
+                                    title: 'Guest Request Declined',
+                                    message: `${notification.actor.username} declined your guest request`
+                                 };
                               default:
                                  return {
                                     icon: Bell,
-                                    color: 'text-inkLight bg-surface 50',
+                                    color: 'text-inkLight bg-surface',
                                     title: 'Notification',
-                                    message: 'You have a new notification'
+                                    message: notification.message || 'You have a new notification'
                                  };
                            }
                         };
@@ -852,6 +981,26 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                                     } catch (error) {
                                        console.error('Failed to mark as read:', error);
                                     }
+                                 }
+                                 // Navigate based on notification type
+                                 if (notification.notification_type === 'guest_request' && notification.actor?.id) {
+                                    onNavigate('creator-detail', notification.actor.id);
+                                 } else if (notification.notification_type === 'guest_accepted' && notification.object_id) {
+                                    // Fetch show to get slug for navigation
+                                    try {
+                                       const show = await fetchShowByPk(notification.object_id);
+                                       if (show) onNavigate('show-detail', show.slug);
+                                    } catch { console.error('Could not navigate to show'); }
+                                 } else if (notification.notification_type === 'guest_declined' && notification.actor?.id) {
+                                    onNavigate('creator-detail', notification.actor.id);
+                                 } else if (notification.notification_type === 'follow' && notification.actor?.id) {
+                                    onNavigate('creator-detail', notification.actor.id);
+                                 } else if ((notification.notification_type === 'like' || notification.notification_type === 'comment') && notification.object_id) {
+                                    // Fetch show to get slug for navigation
+                                    try {
+                                       const show = await fetchShowByPk(notification.object_id);
+                                       if (show) onNavigate('show-detail', show.slug);
+                                    } catch { console.error('Could not navigate to show'); }
                                  }
                               }}
                               className={`flex gap-4 p-3 rounded-2xl transition-colors cursor-pointer group ${notification.is_read ? 'hover:bg-surface' : 'bg-gold/5 hover:bg-gold/10 border border-gold/20'
@@ -939,6 +1088,29 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                </div>
             )}
          </section>
+
+         {/* Toast Notification */}
+         {showSuccessToast && (
+            <motion.div
+               initial={{ opacity: 0, y: 50 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 50 }}
+               className={`fixed bottom-8 right-8 px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 ${toastType === 'success' ? 'bg-green-500' : 'bg-red-500'
+                  } text-white`}
+            >
+               {toastType === 'success' ? (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+               ) : (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+               )}
+               <span className="font-bold">{toastMessage}</span>
+            </motion.div>
+         )}
+
 
          {/* Edit Show Modal */}
          {showToEdit && (

@@ -27,6 +27,12 @@ export interface Show {
         is_verified: boolean;
     };
     tags: Tag[];
+    guests: {
+        id: number;
+        username: string;
+        profile_picture: string | null;
+        is_verified: boolean;
+    }[];
     external_link: string | null;
     link_platform: 'youtube' | 'twitter' | 'twitch' | 'rumble' | 'kick' | 'other' | '';
     like_count: number;
@@ -36,7 +42,8 @@ export interface Show {
 
 export interface Notification {
     id: number;
-    notification_type: 'follow' | 'like' | 'comment' | 'show_reminder' | 'show_cancelled';
+    notification_type: 'follow' | 'like' | 'comment' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined';
+    message?: string;
     is_read: boolean;
     created_at: string;
     recipient: {
@@ -67,6 +74,32 @@ export interface ShowInstance {
     datetime: string;
     status: string;
     reminder_status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | null;
+}
+
+export interface GuestRequest {
+    id: number;
+    show: {
+        id: number;
+        title: string;
+        slug: string;
+        thumbnail: string | null;
+        creator: {
+            id: number;
+            username: string;
+            profile_picture: string | null;
+            is_verified: boolean;
+        };
+    };
+    requester: {
+        id: number;
+        username: string;
+        profile_picture: string | null;
+        is_verified: boolean;
+    };
+    status: 'pending' | 'accepted' | 'declined';
+    message: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface User {
@@ -231,6 +264,18 @@ export interface Creator {
     is_verified: boolean;
     role: 'user' | 'creator';
     follower_count: number;
+}
+
+// Creator Statistics Interface
+export interface CreatorStats {
+    total_views: number;
+    total_shares: number;
+    total_likes: number;
+    total_comments: number;
+    follower_count: number;
+    following_count: number;
+    show_count: number;
+    event_count: number;
 }
 
 export const fetchCreators = async (): Promise<Creator[]> => {
@@ -430,6 +475,7 @@ export const fetchCreatorStats = async (creatorId: number, accessToken?: string)
             console.warn('Stats endpoint not available, using minimal data');
             return {
                 total_views: 0,
+                total_shares: 0,
                 total_likes: 0,
                 total_comments: 0,
                 follower_count: 0,
@@ -443,6 +489,7 @@ export const fetchCreatorStats = async (creatorId: number, accessToken?: string)
         console.error('Error fetching creator stats:', error);
         return {
             total_views: 0,
+            total_shares: 0,
             total_likes: 0,
             total_comments: 0,
             follower_count: 0,
@@ -660,6 +707,31 @@ export const fetchShowBySlug = async (slug: string): Promise<Show> => {
 // Legacy function for backward compatibility (redirects to slug-based)
 export const fetchShowById = async (id: number | string): Promise<Show> => {
     return fetchShowBySlug(String(id));
+};
+
+// Fetch show by numeric PK (for notification routing where we only have the ID)
+// Since ShowViewSet uses slug as lookup_field, we can't use /shows/{pk}/
+// Instead, get all shows and find by ID client-side (not ideal but works)
+export const fetchShowByPk = async (pk: number): Promise<Show | null> => {
+    try {
+        // Try to get the show directly by pk using the detail endpoint
+        // This might work if the backend allows pk lookups even with slug as lookup_field
+        const directResponse = await fetch(`${API_BASE_URL}/shows/${pk}/`);
+        if (directResponse.ok) {
+            return await directResponse.json();
+        }
+
+        // Fallback: fetch all shows and filter client-side
+        const response = await fetch(`${API_BASE_URL}/shows/`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        const shows = data.results || data || [];
+        const show = shows.find((s: Show) => s.id === pk);
+        return show || null;
+    } catch (error) {
+        console.error('Error fetching show by PK:', error);
+        return null;
+    }
 };
 
 
@@ -973,9 +1045,10 @@ export interface Notification {
         username: string;
         profile_picture: string | null;
     };
-    notification_type: 'follow' | 'like' | 'comment' | 'show_reminder' | 'show_cancelled';
+    notification_type: 'follow' | 'like' | 'comment' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined';
     content_type: number | null;
     object_id: number | null;
+    message?: string;
     is_read: boolean;
     created_at: string;
 }
@@ -1133,4 +1206,101 @@ export const fetchUpcomingInstances = async (showId: number, accessToken: string
         console.error('Error fetching upcoming instances:', error);
         return [];
     }
+};
+
+
+// ============================================================================
+// Guest Request Functions
+// ============================================================================
+
+export const createGuestRequest = async (
+    showId: number,
+    message: string,
+    accessToken: string
+): Promise<GuestRequest> => {
+    const response = await fetch(`${API_BASE_URL}/guest-requests/create_request/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ show_id: showId, message })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create guest request');
+    }
+
+    return await response.json();
+};
+
+export const getReceivedGuestRequests = async (accessToken: string): Promise<GuestRequest[]> => {
+    const response = await fetch(`${API_BASE_URL}/guest-requests/?received=true`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch received guest requests');
+
+    const data = await response.json();
+    return data.results || data || [];
+};
+
+export const getSentGuestRequests = async (accessToken: string): Promise<GuestRequest[]> => {
+    const response = await fetch(`${API_BASE_URL}/guest-requests/`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch sent guest requests');
+
+    const data = await response.json();
+    return data.results || data || [];
+};
+
+// Check if user has already sent a request for this show
+export const checkExistingGuestRequest = async (showId: number, token: string): Promise<boolean> => {
+    try {
+        const requests = await getSentGuestRequests(token);
+        return requests.some(r => r.show.id === showId && r.status === 'pending');
+    } catch (error) {
+        console.error('Failed to check existing request:', error);
+        return false;
+    }
+};
+
+
+export const acceptGuestRequest = async (requestId: number, accessToken: string): Promise<GuestRequest> => {
+    const response = await fetch(`${API_BASE_URL}/guest-requests/${requestId}/accept/`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        },
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to accept guest request');
+    }
+
+    return await response.json();
+};
+
+export const declineGuestRequest = async (requestId: number, accessToken: string): Promise<GuestRequest> => {
+    const response = await fetch(`${API_BASE_URL}/guest-requests/${requestId}/decline/`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+        },
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to decline guest request');
+    }
+
+    return await response.json();
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Star, TrendingUp, Users, CheckCircle, Plus, Video } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { fetchCreators, fetchCreatorShows, Creator, Show } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 
 interface CreatorsDiscoveryProps {
   onNavigate?: (page: string, id?: string | number) => void;
@@ -10,6 +11,7 @@ interface CreatorsDiscoveryProps {
 const categories = ["Top Rated", "Rising Stars", "Analysts", "Educators", "Entertainers", "Developers"];
 
 export const CreatorsDiscovery: React.FC<CreatorsDiscoveryProps> = ({ onNavigate }) => {
+  const { backendUser } = useAuth();
   const [activeCategory, setActiveCategory] = useState("Top Rated");
   const [creators, setCreators] = useState<Creator[]>([]);
   const [creatorShows, setCreatorShows] = useState<Record<number, Show[]>>({});
@@ -78,8 +80,22 @@ export const CreatorsDiscovery: React.FC<CreatorsDiscoveryProps> = ({ onNavigate
           <button className="bg-gold text-white font-bold px-8 py-4 rounded-full shadow-lg hover:bg-gold/90 transition-colors">
             Start Exploring
           </button>
-          <button className="bg-canvas border border-borderSubtle text-ink font-bold px-8 py-4 rounded-full hover:bg-surface hover:border-gold/30 transition-all shadow-sm">
-            Apply as Creator
+          <button
+            onClick={() => {
+              if (!backendUser) {
+                // Not logged in - go to edit-profile
+                if (onNavigate) onNavigate('edit-profile');
+              } else if (backendUser.role === 'creator') {
+                // Already a creator - go to dashboard
+                if (onNavigate) onNavigate('dashboard');
+              } else {
+                // Logged in but not a creator - go to edit profile to become one
+                if (onNavigate) onNavigate('edit-profile');
+              }
+            }}
+            className="bg-canvas border border-borderSubtle text-ink font-bold px-8 py-4 rounded-full hover:bg-surface hover:border-gold/30 transition-all shadow-sm"
+          >
+            {backendUser?.role === 'creator' ? 'Go to Dashboard' : 'Apply as Creator'}
           </button>
         </div>
       </section>
