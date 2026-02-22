@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save, Loader2, Upload } from 'lucide-react';
-import { Show, updateShow, CreateShowPayload, UpdateShowPayload, Tag } from '../lib/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Save, Loader2, Upload, Search, UserPlus, Crown, Users } from 'lucide-react';
+import { Show, updateShow, CreateShowPayload, UpdateShowPayload, Tag, searchCreators } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import { TagInput } from './TagInput';
 
@@ -20,6 +20,13 @@ const DAYS_OF_WEEK = [
     { value: 5, label: 'Friday' },
     { value: 6, label: 'Saturday' },
 ];
+
+interface UserInfo {
+    id: number;
+    username: string;
+    profile_picture: string | null;
+    is_verified?: boolean;
+}
 
 export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onClose, onSuccess }) => {
     const { accessToken } = useAuth();
@@ -41,6 +48,15 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Co-host state
+    const [coHosts, setCoHosts] = useState<UserInfo[]>(show.co_hosts || []);
+    const [coHostSearch, setCoHostSearch] = useState('');
+    const [coHostResults, setCoHostResults] = useState<UserInfo[]>([]);
+    const [searchingCoHosts, setSearchingCoHosts] = useState(false);
+    const [showCoHostDropdown, setShowCoHostDropdown] = useState(false);
+    const coHostSearchRef = useRef<HTMLDivElement>(null);
+    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     // Reset form when show changes
     useEffect(() => {
         setFormData({
@@ -57,19 +73,76 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
             link_platform: show.link_platform || ''
         });
         setThumbnailPreview(show.thumbnail);
+        setCoHosts(show.co_hosts || []);
         setError(null);
     }, [show]);
+
+    // Close co-host dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (coHostSearchRef.current && !coHostSearchRef.current.contains(e.target as Node)) {
+                setShowCoHostDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const handleThumbnailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setFormData(prev => ({ ...prev, thumbnail: file }));
+            setFormData({ ...formData, thumbnail: file });
             const reader = new FileReader();
             reader.onloadend = () => {
                 setThumbnailPreview(reader.result as string);
             };
             reader.readAsDataURL(file);
         }
+    };
+
+    // Co-host search with debounce
+    const handleCoHostSearch = (query: string) => {
+        setCoHostSearch(query);
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+        if (query.trim().length < 2) {
+            setCoHostResults([]);
+            setShowCoHostDropdown(false);
+            return;
+        }
+
+        searchTimeoutRef.current = setTimeout(async () => {
+            setSearchingCoHosts(true);
+            try {
+                const results = await searchCreators(query);
+                // Filter out the show creator and already-added co-hosts
+                const filteredResults = results.filter(
+                    (r: any) => r.id !== show.creator.id && !coHosts.some(c => c.id === r.id)
+                );
+                setCoHostResults(filteredResults);
+                setShowCoHostDropdown(true);
+            } catch (err) {
+                console.error('Co-host search failed:', err);
+            } finally {
+                setSearchingCoHosts(false);
+            }
+        }, 300);
+    };
+
+    const addCoHost = (userInfo: UserInfo) => {
+        setCoHosts(prev => [...prev, userInfo]);
+        setCoHostSearch('');
+        setCoHostResults([]);
+        setShowCoHostDropdown(false);
+    };
+
+    const removeCoHost = (userId: number) => {
+        setCoHosts(prev => prev.filter(c => c.id !== userId));
+    };
+
+    const removeGuest = (guestId: number) => {
+        // We'll handle guest removal by updating the show's guests through the backend
+        // For now, we track which guests to remove
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -113,7 +186,8 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                 status: formData.status,
                 tag_ids: formData.tags.map(t => t.id),
                 external_link: formData.external_link,
-                link_platform: formData.link_platform as any
+                link_platform: formData.link_platform as any,
+                co_host_ids: coHosts.map(c => c.id),
             };
 
             if (formData.thumbnail) {
@@ -227,6 +301,128 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                         />
                     </div>
 
+                    {/* Co-Hosts */}
+                    <div>
+                        <label className="block text-sm font-bold text-ink mb-2">
+                            <Crown className="w-4 h-4 inline-block mr-1 text-gold" />
+                            Co-Hosts
+                        </label>
+                        <p className="text-xs text-inkLight mb-3">
+                            Co-hosts share this show on their profile and receive show notifications.
+                        </p>
+
+                        {/* Current co-hosts */}
+                        {coHosts.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-3">
+                                {coHosts.map((coHost) => (
+                                    <div
+                                        key={coHost.id}
+                                        className="flex items-center gap-2 bg-gold/10 border border-gold/30 rounded-full pl-1 pr-2 py-1"
+                                    >
+                                        <img
+                                            src={coHost.profile_picture || '/default-avatar.png'}
+                                            alt={coHost.username}
+                                            className="w-6 h-6 rounded-full object-cover"
+                                        />
+                                        <span className="text-sm font-medium text-ink">{coHost.username}</span>
+                                        {coHost.is_verified && (
+                                            <span className="text-gold text-xs">✓</span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => removeCoHost(coHost.id)}
+                                            className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-100 text-inkLight hover:text-red-500 transition-colors"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Co-host search */}
+                        <div className="relative" ref={coHostSearchRef}>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-inkLight" />
+                                <input
+                                    type="text"
+                                    value={coHostSearch}
+                                    onChange={(e) => handleCoHostSearch(e.target.value)}
+                                    onFocus={() => coHostResults.length > 0 && setShowCoHostDropdown(true)}
+                                    placeholder="Search creators to add as co-host..."
+                                    className="w-full pl-10 pr-4 py-2.5 bg-surface border border-borderSubtle rounded-xl text-sm text-ink placeholder:text-inkLight/50 focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all"
+                                />
+                                {searchingCoHosts && (
+                                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-inkLight animate-spin" />
+                                )}
+                            </div>
+
+                            {/* Search results dropdown */}
+                            {showCoHostDropdown && coHostResults.length > 0 && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-canvas border border-borderSubtle rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto">
+                                    {coHostResults.map((result) => (
+                                        <button
+                                            key={result.id}
+                                            type="button"
+                                            onClick={() => addCoHost(result)}
+                                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface transition-colors first:rounded-t-xl last:rounded-b-xl"
+                                        >
+                                            <img
+                                                src={result.profile_picture || '/default-avatar.png'}
+                                                alt={result.username}
+                                                className="w-8 h-8 rounded-full object-cover"
+                                            />
+                                            <div className="text-left">
+                                                <span className="text-sm font-medium text-ink">{result.username}</span>
+                                                {result.is_verified && (
+                                                    <span className="ml-1 text-gold text-xs">✓</span>
+                                                )}
+                                            </div>
+                                            <UserPlus className="w-4 h-4 text-inkLight ml-auto" />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {showCoHostDropdown && coHostSearch.trim().length >= 2 && coHostResults.length === 0 && !searchingCoHosts && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-canvas border border-borderSubtle rounded-xl shadow-lg z-20 px-4 py-3">
+                                    <p className="text-sm text-inkLight">No creators found</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Current Guests (read-only display) */}
+                    {show.guests && show.guests.length > 0 && (
+                        <div>
+                            <label className="block text-sm font-bold text-ink mb-2">
+                                <Users className="w-4 h-4 inline-block mr-1 text-inkLight" />
+                                Featured Guests ({show.guests.length})
+                            </label>
+                            <p className="text-xs text-inkLight mb-3">
+                                Guests are added through the guest request workflow on your show page.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                {show.guests.map((guest) => (
+                                    <div
+                                        key={guest.id}
+                                        className="flex items-center gap-2 bg-surface border border-borderSubtle rounded-full pl-1 pr-3 py-1"
+                                    >
+                                        <img
+                                            src={guest.profile_picture || '/default-avatar.png'}
+                                            alt={guest.username}
+                                            className="w-6 h-6 rounded-full object-cover"
+                                        />
+                                        <span className="text-sm font-medium text-ink">{guest.username}</span>
+                                        {guest.is_verified && (
+                                            <span className="text-gold text-xs">✓</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* External Link (Watch Now) */}
                     <div>
                         <label className="block text-sm font-bold text-ink mb-2">
@@ -251,103 +447,71 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                                 value={formData.external_link}
                                 onChange={(e) => setFormData({ ...formData, external_link: e.target.value })}
                                 placeholder="https://youtube.com/watch?v=..."
-                                className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors text-ink"
+                                className="w-full px-4 py-3 bg-surface border border-borderSubtle rounded-xl text-ink placeholder:text-inkLight/50 focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all"
                             />
                         </div>
                     </div>
 
-                    {/* Recurring Show */}
-                    <div className="flex items-center gap-3 pt-2">
-                        <input
-                            type="checkbox"
-                            checked={formData.is_recurring}
-                            onChange={(e) => setFormData({ ...formData, is_recurring: e.target.checked })}
-                            className="w-5 h-5 rounded border-borderSubtle text-gold focus:ring-2 focus:ring-gold/20"
-                        />
-                        <label className="text-sm font-bold text-ink">This is a recurring show</label>
-                    </div>
+                    {/* Schedule */}
+                    <div>
+                        <label className="block text-sm font-bold text-ink mb-2">Schedule</label>
+                        <div className="space-y-4">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.is_recurring}
+                                    onChange={(e) => setFormData({ ...formData, is_recurring: e.target.checked })}
+                                    className="w-5 h-5 rounded border-borderSubtle text-gold focus:ring-gold"
+                                />
+                                <span className="text-sm font-medium text-ink">This is a recurring show</span>
+                            </label>
 
-                    {/* Recurring Details */}
-                    {formData.is_recurring && (
-                        <div className="space-y-4 pl-8 border-l-2 border-gold/20">
-                            {/* Recurrence Pattern */}
-                            <div>
-                                <label className="block text-sm font-bold text-ink mb-2">Recurrence Pattern</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, recurrence_type: 'DAILY', day_of_week: undefined })}
-                                        className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'DAILY'
-                                            ? 'bg-gold text-white'
-                                            : 'bg-surface border border-borderSubtle text-inkLight hover:border-gold'
-                                            }`}
-                                    >
-                                        Daily
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, recurrence_type: 'WEEKDAYS', day_of_week: undefined })}
-                                        className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'WEEKDAYS'
-                                            ? 'bg-gold text-white'
-                                            : 'bg-surface border border-borderSubtle text-inkLight hover:border-gold'
-                                            }`}
-                                    >
-                                        Weekdays
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, recurrence_type: 'WEEKENDS', day_of_week: undefined })}
-                                        className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'WEEKENDS'
-                                            ? 'bg-gold text-white'
-                                            : 'bg-surface border border-borderSubtle text-inkLight hover:border-gold'
-                                            }`}
-                                    >
-                                        Weekends
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, recurrence_type: 'SPECIFIC_DAY' })}
-                                        className={`py-2 px-3 rounded-lg text-sm font-bold transition-colors ${formData.recurrence_type === 'SPECIFIC_DAY'
-                                            ? 'bg-gold text-white'
-                                            : 'bg-surface border border-borderSubtle text-inkLight hover:border-gold'
-                                            }`}
-                                    >
-                                        Specific Day
-                                    </button>
-                                </div>
-                            </div>
+                            {formData.is_recurring && (
+                                <div className="space-y-4 p-4 bg-surface/50 rounded-xl border border-borderSubtle">
+                                    <div>
+                                        <label className="block text-sm font-bold text-ink mb-2">Recurrence Pattern</label>
+                                        <select
+                                            value={formData.recurrence_type || ''}
+                                            onChange={(e) => setFormData({ ...formData, recurrence_type: e.target.value as any || undefined })}
+                                            className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors text-ink"
+                                        >
+                                            <option value="">Select pattern</option>
+                                            <option value="DAILY">Daily</option>
+                                            <option value="SPECIFIC_DAY">Specific Day</option>
+                                            <option value="WEEKDAYS">Weekdays (Mon-Fri)</option>
+                                            <option value="WEEKENDS">Weekends (Sat-Sun)</option>
+                                        </select>
+                                    </div>
 
-                            {/* Day of Week - Only if Specific Day */}
-                            {formData.recurrence_type === 'SPECIFIC_DAY' && (
-                                <div>
-                                    <label className="block text-sm font-bold text-ink mb-2">Day of Week</label>
-                                    <select
-                                        value={formData.day_of_week ?? ''}
-                                        onChange={(e) => setFormData({ ...formData, day_of_week: parseInt(e.target.value) })}
-                                        className="w-full px-4 py-3 bg-surface border border-borderSubtle rounded-xl text-ink focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20"
-                                        required
-                                    >
-                                        <option value="">Select day</option>
-                                        {DAYS_OF_WEEK.map(day => (
-                                            <option key={day.value} value={day.value}>{day.label}</option>
-                                        ))}
-                                    </select>
+                                    {formData.recurrence_type === 'SPECIFIC_DAY' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-ink mb-2">Day of Week</label>
+                                            <select
+                                                value={formData.day_of_week ?? ''}
+                                                onChange={(e) => setFormData({ ...formData, day_of_week: e.target.value ? parseInt(e.target.value) : undefined })}
+                                                className="w-full bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-gold transition-colors text-ink"
+                                            >
+                                                <option value="">Select day</option>
+                                                {DAYS_OF_WEEK.map(day => (
+                                                    <option key={day.value} value={day.value}>{day.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-ink mb-2">Time</label>
+                                        <input
+                                            type="time"
+                                            value={formData.scheduled_time}
+                                            onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                                            className="w-full px-4 py-3 bg-surface border border-borderSubtle rounded-xl text-ink focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all"
+                                        />
+                                    </div>
                                 </div>
                             )}
-
-                            {/* Time */}
-                            <div>
-                                <label className="block text-sm font-bold text-ink mb-2">Time</label>
-                                <input
-                                    type="time"
-                                    value={formData.scheduled_time}
-                                    onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                                    className="w-full px-4 py-3 bg-surface border border-borderSubtle rounded-xl text-ink focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/20"
-                                    required
-                                />
-                            </div>
                         </div>
-                    )}
+                    </div>
 
                     {/* Status */}
                     <div>
@@ -356,9 +520,10 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"
+                                    name="status"
                                     value="draft"
                                     checked={formData.status === 'draft'}
-                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'draft' | 'published' })}
+                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'draft' | 'published' | 'archived' })}
                                     className="w-4 h-4 text-gold focus:ring-gold"
                                 />
                                 <span className="text-sm font-medium text-ink">Draft</span>
@@ -366,9 +531,10 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"
+                                    name="status"
                                     value="published"
                                     checked={formData.status === 'published'}
-                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'draft' | 'published' })}
+                                    onChange={(e) => setFormData({ ...formData, status: e.target.value as 'draft' | 'published' | 'archived' })}
                                     className="w-4 h-4 text-gold focus:ring-gold"
                                 />
                                 <span className="text-sm font-medium text-ink">Published</span>
@@ -376,6 +542,7 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"
+                                    name="status"
                                     value="archived"
                                     checked={formData.status === 'archived'}
                                     onChange={(e) => setFormData({ ...formData, status: e.target.value as 'draft' | 'published' | 'archived' })}
@@ -419,5 +586,3 @@ export const EditShowModal: React.FC<EditShowModalProps> = ({ show, isOpen, onCl
         </div>
     );
 };
-
-

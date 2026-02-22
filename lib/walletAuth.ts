@@ -24,6 +24,7 @@ export interface User {
     profile_picture?: string;
     cover_photo?: string;
     is_verified: boolean;
+    is_staff?: boolean;
     date_joined: string;
     follower_count?: number;
     following_count?: number;
@@ -188,6 +189,112 @@ export function clearAuth(): void {
 export function isAuthenticated(): boolean {
     const token = getAccessToken();
     return !!token;
+}
+
+// ============================================
+// Token Refresh & Validation
+// ============================================
+
+/**
+ * Decode a JWT payload without verification (just reads the expiry).
+ * Returns null if the token is malformed.
+ */
+function decodeTokenPayload(token: string): { exp: number;[key: string]: any } | null {
+    try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+            atob(base64)
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        );
+        return JSON.parse(jsonPayload);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Check if a JWT token is expired based on its exp claim.
+ * Adds a 30-second buffer so we refresh slightly before actual expiry.
+ */
+export function isTokenExpired(token: string): boolean {
+    const payload = decodeTokenPayload(token);
+    if (!payload?.exp) return true;
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    return payload.exp < nowInSeconds + 30; // 30s buffer
+}
+
+/**
+ * Refresh the access token using the stored refresh token.
+ * Calls POST /api/auth/token/refresh/ on the backend.
+ * Returns new tokens on success, or null if the refresh token is also expired.
+ */
+export async function refreshAccessToken(): Promise<Tokens | null> {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) {
+        console.warn('⚠️ [AUTH] No refresh token found');
+        return null;
+    }
+
+    // Quick client-side check: if refresh token itself is expired, don't bother calling API
+    if (isTokenExpired(refreshToken)) {
+        console.warn('⚠️ [AUTH] Refresh token is expired — session ended');
+        return null;
+    }
+
+    try {
+        console.log('🔄 [AUTH] Refreshing access token...');
+        const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh: refreshToken }),
+        });
+
+        if (!response.ok) {
+            console.warn('⚠️ [AUTH] Token refresh failed:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        // SimpleJWT returns { access: '...' } and optionally { refresh: '...' } if ROTATE_REFRESH_TOKENS is true
+        const newTokens: Tokens = {
+            access: data.access,
+            refresh: data.refresh || refreshToken, // Use new refresh if rotated, else keep old
+        };
+
+        storeTokens(newTokens);
+        console.log('✅ [AUTH] Access token refreshed successfully');
+        return newTokens;
+    } catch (error) {
+        console.error('❌ [AUTH] Token refresh error:', error);
+        return null;
+    }
+}
+
+/**
+ * Get a valid access token, refreshing if needed.
+ * Returns null and clears auth if the session is fully expired.
+ * Use this instead of getAccessToken() for API calls.
+ */
+export async function getValidAccessToken(): Promise<string | null> {
+    const accessToken = getAccessToken();
+
+    // No token at all
+    if (!accessToken) return null;
+
+    // Token still valid
+    if (!isTokenExpired(accessToken)) return accessToken;
+
+    // Token expired — try to refresh
+    const newTokens = await refreshAccessToken();
+    if (newTokens) return newTokens.access;
+
+    // Refresh also failed — session is fully expired
+    console.warn('⚠️ [AUTH] Session fully expired — clearing auth');
+    clearAuth();
+    return null;
 }
 
 // ============================================

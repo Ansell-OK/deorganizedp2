@@ -132,6 +132,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage }) => {
   const navLinks = [
     { label: 'Shows', id: 'shows' },
     { label: 'Creators', id: 'creators' },
+    { label: 'Community', id: 'community' },
     { label: 'Calendar', id: 'event-calendar' }
   ];
 

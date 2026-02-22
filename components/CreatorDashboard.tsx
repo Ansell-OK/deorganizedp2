@@ -3,7 +3,7 @@ import {
    User, Settings, DollarSign, TrendingUp, Calendar as CalendarIcon,
    Plus, Users, Bell, Check, X, Clock, Video,
    BarChart3, ArrowUpRight, MoreHorizontal, Heart, MessageSquare,
-   Trophy, Loader2, ChevronLeft, ChevronRight, Repeat, ChevronDown
+   Trophy, Loader2, ChevronLeft, ChevronRight, Repeat, ChevronDown, Crown
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { addMonths, subMonths, format } from 'date-fns';
@@ -14,6 +14,7 @@ import {
    fetchUserProfile,
    updateUserProfile,
    createShow,
+   searchCreators,
    fetchNotifications,
    markNotificationRead,
    markAllNotificationsRead,
@@ -34,9 +35,10 @@ import { RealTimeCalendar } from './RealTimeCalendar';
 import { EditShowModal } from './EditShowModal';
 import { EditEventModal } from './EditEventModal';
 import { TagInput } from './TagInput';
+import { FollowersList } from './FollowersList';
 
 interface CreatorDashboardProps {
-   onNavigate: (page: string) => void;
+   onNavigate: (page: string, id?: string | number) => void;
 }
 
 export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }) => {
@@ -52,6 +54,10 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
    const [stats, setStats] = useState<CreatorStats | null>(null);
    const [notifications, setNotifications] = useState<Notification[]>([]);
    const [guestRequests, setGuestRequests] = useState<GuestRequest[]>([]);
+
+   // Followers modal
+   const [showFollowersModal, setShowFollowersModal] = useState(false);
+   const [followersModalTab, setFollowersModalTab] = useState<'followers' | 'following'>('followers');
 
    // Loading states
    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -80,6 +86,15 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
    const [isSubmitting, setIsSubmitting] = useState(false);
    const [formError, setFormError] = useState<string | null>(null);
    const [formSuccess, setFormSuccess] = useState(false);
+
+   // Co-host state for create form
+   const [createCoHosts, setCreateCoHosts] = useState<{ id: number; username: string; profile_picture: string | null; is_verified?: boolean }[]>([]);
+   const [createCoHostSearch, setCreateCoHostSearch] = useState('');
+   const [createCoHostResults, setCreateCoHostResults] = useState<any[]>([]);
+   const [searchingCreateCoHosts, setSearchingCreateCoHosts] = useState(false);
+   const [showCreateCoHostDropdown, setShowCreateCoHostDropdown] = useState(false);
+   const createCoHostSearchRef = React.useRef<HTMLDivElement>(null);
+   const createCoHostTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
    // Edit show state
    const [showToEdit, setShowToEdit] = useState<Show | null>(null);
@@ -317,6 +332,10 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
             payload.scheduled_time = formData.scheduled_time;
          }
 
+         if (createCoHosts.length > 0) {
+            payload.co_host_ids = createCoHosts.map(c => c.id);
+         }
+
          await createShow(payload, accessToken);
 
          setFormSuccess(true);
@@ -333,6 +352,7 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
             external_link: '',
             link_platform: ''
          });
+         setCreateCoHosts([]); // Reset co-host state on success
 
          // Refresh shows list
          if (backendUser?.id) {
@@ -455,12 +475,18 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                         </p>
 
                         <div className="grid grid-cols-3 gap-4 md:gap-12 border-t border-borderSubtle pt-6">
-                           <div>
+                           <button
+                              onClick={() => {
+                                 setShowFollowersModal(true);
+                                 setFollowersModalTab('followers');
+                              }}
+                              className="cursor-pointer hover:text-gold transition-colors"
+                           >
                               <div className="text-2xl font-bold text-ink">
                                  {formatNumber(profile?.follower_count || 0)}
                               </div>
                               <div className="text-xs text-inkLight font-bold uppercase tracking-wide">Followers</div>
-                           </div>
+                           </button>
                            <div>
                               <div className="text-2xl font-bold text-ink">
                                  {formatNumber(stats?.total_shares || 0)}
@@ -610,6 +636,76 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                            onChange={(tags) => setFormData({ ...formData, tags })}
                            placeholder="Add tags (Bitcoin, Stacks, etc.)"
                         />
+                     </div>
+
+                     {/* Co-Hosts */}
+                     <div>
+                        <label className="block text-xs font-bold text-inkLight uppercase tracking-wide mb-2">
+                           <Crown className="w-3.5 h-3.5 inline-block mr-1 text-gold" />
+                           Co-Hosts <span className="text-inkLight/50 normal-case">(Optional)</span>
+                        </label>
+                        <p className="text-xs text-inkLight mb-2">Co-hosts share this show on their profile.</p>
+
+                        {/* Current co-hosts chips */}
+                        {createCoHosts.length > 0 && (
+                           <div className="flex flex-wrap gap-2 mb-2">
+                              {createCoHosts.map((coHost) => (
+                                 <div key={coHost.id} className="flex items-center gap-1.5 bg-gold/10 border border-gold/30 rounded-full pl-1 pr-2 py-0.5">
+                                    <img src={coHost.profile_picture || '/default-avatar.png'} alt={coHost.username} className="w-5 h-5 rounded-full object-cover" />
+                                    <span className="text-xs font-medium text-ink">{coHost.username}</span>
+                                    <button type="button" onClick={() => setCreateCoHosts(prev => prev.filter(c => c.id !== coHost.id))} className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-red-100 text-inkLight hover:text-red-500 transition-colors">
+                                       <X className="w-2.5 h-2.5" />
+                                    </button>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+
+                        {/* Co-host search */}
+                        <div className="relative" ref={createCoHostSearchRef}>
+                           <input
+                              type="text"
+                              value={createCoHostSearch}
+                              onChange={(e) => {
+                                 const q = e.target.value;
+                                 setCreateCoHostSearch(q);
+                                 if (createCoHostTimeoutRef.current) clearTimeout(createCoHostTimeoutRef.current);
+                                 if (q.trim().length < 2) { setCreateCoHostResults([]); setShowCreateCoHostDropdown(false); return; }
+                                 createCoHostTimeoutRef.current = setTimeout(async () => {
+                                    setSearchingCreateCoHosts(true);
+                                    try {
+                                       const results = await searchCreators(q);
+                                       const filtered = results.filter((r: any) => r.id !== backendUser?.id && !createCoHosts.some(c => c.id === r.id));
+                                       setCreateCoHostResults(filtered);
+                                       setShowCreateCoHostDropdown(true);
+                                    } catch (err) { console.error(err); }
+                                    finally { setSearchingCreateCoHosts(false); }
+                                 }, 300);
+                              }}
+                              placeholder="Search creators..."
+                              className="w-full pl-3 pr-3 py-2 bg-canvas border border-borderSubtle rounded-xl text-sm text-ink placeholder:text-inkLight/50 focus:outline-none focus:border-gold transition-colors"
+                           />
+                           {showCreateCoHostDropdown && createCoHostResults.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-canvas border border-borderSubtle rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto">
+                                 {createCoHostResults.map((result: any) => (
+                                    <button
+                                       key={result.id}
+                                       type="button"
+                                       onClick={() => {
+                                          setCreateCoHosts(prev => [...prev, { id: result.id, username: result.username, profile_picture: result.profile_picture, is_verified: result.is_verified }]);
+                                          setCreateCoHostSearch('');
+                                          setCreateCoHostResults([]);
+                                          setShowCreateCoHostDropdown(false);
+                                       }}
+                                       className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface transition-colors text-left"
+                                    >
+                                       <img src={result.profile_picture || '/default-avatar.png'} alt={result.username} className="w-6 h-6 rounded-full object-cover" />
+                                       <span className="text-sm font-medium text-ink">{result.username}</span>
+                                    </button>
+                                 ))}
+                              </div>
+                           )}
+                        </div>
                      </div>
 
                      {/* External Link (Watch Now) */}
@@ -1183,6 +1279,27 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                                     title: 'Guest Request Declined',
                                     message: `${notification.actor.username} declined your guest request`
                                  };
+                              case 'co_host_added':
+                                 return {
+                                    icon: Crown,
+                                    color: 'text-gold bg-gold/10',
+                                    title: 'Added as Co-Host',
+                                    message: notification.message || `${notification.actor.username} added you as a co-host`
+                                 };
+                              case 'show_reminder':
+                                 return {
+                                    icon: Clock,
+                                    color: 'text-gold bg-gold/10',
+                                    title: 'Show Reminder',
+                                    message: notification.show_title ? `${notification.show_title} is starting soon` : 'A show is starting soon'
+                                 };
+                              case 'show_cancelled':
+                                 return {
+                                    icon: X,
+                                    color: 'text-red-500 bg-red-50',
+                                    title: 'Show Cancelled',
+                                    message: notification.show_title ? `${notification.show_title} has been cancelled` : 'A show has been cancelled'
+                                 };
                               default:
                                  return {
                                     icon: Bell,
@@ -1213,8 +1330,9 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                                  // Navigate based on notification type
                                  if (notification.notification_type === 'guest_request' && notification.actor?.id) {
                                     onNavigate('creator-detail', notification.actor.id);
+                                 } else if (notification.notification_type === 'guest_accepted' && notification.show_slug) {
+                                    onNavigate('show-detail', notification.show_slug);
                                  } else if (notification.notification_type === 'guest_accepted' && notification.object_id) {
-                                    // Fetch show to get slug for navigation
                                     try {
                                        const show = await fetchShowByPk(notification.object_id);
                                        if (show) onNavigate('show-detail', show.slug);
@@ -1223,12 +1341,38 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                                     onNavigate('creator-detail', notification.actor.id);
                                  } else if (notification.notification_type === 'follow' && notification.actor?.id) {
                                     onNavigate('creator-detail', notification.actor.id);
-                                 } else if ((notification.notification_type === 'like' || notification.notification_type === 'comment') && notification.object_id) {
-                                    // Fetch show to get slug for navigation
-                                    try {
-                                       const show = await fetchShowByPk(notification.object_id);
-                                       if (show) onNavigate('show-detail', show.slug);
-                                    } catch { console.error('Could not navigate to show'); }
+                                 } else if (notification.notification_type === 'co_host_added') {
+                                    if (notification.show_slug) {
+                                       onNavigate('show-detail', notification.show_slug);
+                                    } else if (notification.object_id) {
+                                       try {
+                                          const show = await fetchShowByPk(notification.object_id);
+                                          if (show) onNavigate('show-detail', show.slug);
+                                       } catch { console.error('Could not navigate to show'); }
+                                    }
+                                 } else if (notification.notification_type === 'show_reminder' || notification.notification_type === 'show_cancelled') {
+                                    if (notification.show_slug) {
+                                       onNavigate('show-detail', notification.show_slug);
+                                    } else if (notification.object_id) {
+                                       try {
+                                          const show = await fetchShowByPk(notification.object_id);
+                                          if (show) onNavigate('show-detail', show.slug);
+                                       } catch { console.error('Could not navigate to show'); }
+                                    }
+                                 } else if (notification.notification_type === 'like' || notification.notification_type === 'comment') {
+                                    // Route based on content type
+                                    if (notification.content_type_name === 'post') {
+                                       onNavigate('community');
+                                    } else if (notification.content_type_name === 'event' && notification.object_id) {
+                                       onNavigate('event-detail', notification.object_id);
+                                    } else if (notification.show_slug) {
+                                       onNavigate('show-detail', notification.show_slug);
+                                    } else if (notification.object_id) {
+                                       try {
+                                          const show = await fetchShowByPk(notification.object_id);
+                                          if (show) onNavigate('show-detail', show.slug);
+                                       } catch { console.error('Could not navigate to content'); }
+                                    }
                                  }
                               }}
                               className={`flex gap-4 p-3 rounded-2xl transition-colors cursor-pointer group ${notification.is_read ? 'hover:bg-surface' : 'bg-gold/5 hover:bg-gold/10 border border-gold/20'
@@ -1437,6 +1581,19 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onNavigate }
                   setEventToEdit(null);
                }}
                onSuccess={handleEditEventSuccess}
+            />
+         )}
+
+         {/* Followers/Following Modal */}
+         {showFollowersModal && profile && (
+            <FollowersList
+               userId={profile.id}
+               username={profile.username}
+               initialTab={followersModalTab}
+               followerCount={profile.follower_count || 0}
+               followingCount={profile.following_count || 0}
+               onClose={() => setShowFollowersModal(false)}
+               onNavigate={onNavigate}
             />
          )}
 

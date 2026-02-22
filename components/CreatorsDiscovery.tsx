@@ -142,29 +142,23 @@ export const CreatorsDiscovery: React.FC<CreatorsDiscoveryProps> = ({ onNavigate
             viewport={{ once: true }}
             className="group bg-canvas border border-borderSubtle rounded-3xl overflow-hidden hover:shadow-soft hover:-translate-y-1 transition-all duration-300 cursor-pointer"
           >
-            {/* Banner & Avatar */}
-            <div className="h-24 bg-surface relative overflow-hidden">
-              <img
-                src={creator.cover_photo || "https://picsum.photos/400/200?grayscale"}
-                alt="banner"
-                className="w-full h-full object-cover opacity-80"
-              />
-            </div>
-            <div className="px-6 relative">
-              <div className="w-20 h-20 rounded-full border-4 border-borderSubtle bg-surface absolute -top-10 overflow-hidden shadow-sm">
-                <img
-                  src={creator.profile_picture || "https://picsum.photos/150/150"}
-                  alt={creator.username}
-                  className="w-full h-full object-cover"
-                />
+            <div className="px-6 pt-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-16 h-16 rounded-full border-4 border-borderSubtle bg-surface overflow-hidden shadow-sm flex-shrink-0">
+                  <img
+                    src={creator.profile_picture || "https://picsum.photos/150/150"}
+                    alt={creator.username}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
               </div>
-              <div className="pt-12 pb-6">
+              <div className="pb-6">
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <h3 className="text-xl font-bold text-ink flex items-center gap-1">
                       {creator.username}
                       {creator.is_verified && (
-                        <CheckCircle className="w-4 h-4 text-gold fill-current" />
+                        <CheckCircle className="w-4 h-4 text-gold" />
                       )}
                     </h3>
                     <p className="text-sm text-inkLight font-medium">@{creator.username.toLowerCase()}</p>

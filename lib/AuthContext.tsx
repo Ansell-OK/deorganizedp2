@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useStacksAuth } from './useStacksAuth';
 import {
     checkWalletOrLogin,
@@ -8,7 +8,10 @@ import {
     clearAuth,
     getStoredUser,
     getAccessToken,
+    getRefreshToken,
     storePendingWallet,
+    isTokenExpired,
+    refreshAccessToken,
     User,
     CompleteSetupPayload
 } from './walletAuth';
@@ -53,16 +56,77 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [isAuthenticating, setIsAuthenticating] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
 
-    // Load tokens and user from localStorage on mount
+    /**
+     * On mount: validate stored session.
+     * If access token is expired, try to refresh it.
+     * If refresh also fails, clear everything so the user sees "Connect Wallet".
+     */
     useEffect(() => {
-        const savedToken = getAccessToken();
-        const savedUser = getStoredUser();
+        const validateSession = async () => {
+            const savedToken = getAccessToken();
+            const savedUser = getStoredUser();
 
-        if (savedToken && savedUser) {
-            setAccessToken(savedToken);
-            setBackendUser(savedUser);
-        }
+            // Nothing stored — not logged in
+            if (!savedToken || !savedUser) return;
+
+            // Access token still valid — restore session
+            if (!isTokenExpired(savedToken)) {
+                setAccessToken(savedToken);
+                setBackendUser(savedUser);
+                return;
+            }
+
+            // Access token expired — try refreshing
+            console.log('🔄 [AUTH] Access token expired on mount, attempting refresh...');
+            const newTokens = await refreshAccessToken();
+
+            if (newTokens) {
+                // Refresh succeeded — restore session with new token
+                setAccessToken(newTokens.access);
+                setBackendUser(savedUser);
+                console.log('✅ [AUTH] Session restored via token refresh');
+            } else {
+                // Both tokens expired — full logout
+                console.warn('⚠️ [AUTH] Session expired — logging out');
+                clearAuth();
+                setAccessToken(null);
+                setBackendUser(null);
+            }
+        };
+
+        validateSession();
     }, []);
+
+    /**
+     * Periodic token refresh: check every 5 minutes while the tab is active.
+     * This prevents the access token from expiring mid-session.
+     */
+    useEffect(() => {
+        // Only run if user is authenticated
+        if (!accessToken) return;
+
+        const interval = setInterval(async () => {
+            const currentToken = getAccessToken();
+            if (!currentToken) return;
+
+            // If token expires within 5 minutes, proactively refresh
+            if (isTokenExpired(currentToken)) {
+                const newTokens = await refreshAccessToken();
+                if (newTokens) {
+                    setAccessToken(newTokens.access);
+                    console.log('🔄 [AUTH] Proactive token refresh completed');
+                } else {
+                    // Refresh failed — session expired
+                    console.warn('⚠️ [AUTH] Session expired during use — logging out');
+                    clearAuth();
+                    setAccessToken(null);
+                    setBackendUser(null);
+                }
+            }
+        }, 5 * 60 * 1000); // Check every 5 minutes
+
+        return () => clearInterval(interval);
+    }, [accessToken]);
 
     /**
      * Handle wallet connection and authentication
@@ -165,16 +229,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     const refreshUser = async () => {
-        const token = getAccessToken();
-        if (!token) return;
-
         try {
+            // Use getValidAccessToken which auto-refreshes if needed
+            const { getValidAccessToken } = await import('./walletAuth');
+            const token = await getValidAccessToken();
+
+            if (!token) {
+                // Session expired — logout
+                logout();
+                return;
+            }
+
             const { getCurrentUser } = await import('./api');
             const updatedUser = await getCurrentUser(token);
             storeUser(updatedUser);
             setBackendUser(updatedUser);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to refresh user:', error);
+            // If we get a 401, the session is dead
+            if (error?.status === 401 || error?.message?.includes('401')) {
+                logout();
+            }
         }
     };
 

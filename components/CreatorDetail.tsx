@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Link as LinkIcon, Users, CheckCircle, Calendar, Video, Heart, MessageSquare, Twitter, Instagram, Youtube } from 'lucide-react';
 import { fetchCreatorById, fetchCreatorShows, checkIsFollowing, toggleFollow, Creator, Show } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
+import { FollowersList } from './FollowersList';
 
 interface CreatorDetailProps {
    onNavigate: (page: string, id?: string | number) => void;
@@ -16,6 +17,8 @@ export const CreatorDetail: React.FC<CreatorDetailProps> = ({ onNavigate, creato
    const [loadingShows, setLoadingShows] = useState(true);
    const [isFollowing, setIsFollowing] = useState(false);
    const [followLoading, setFollowLoading] = useState(false);
+   const [showFollowersModal, setShowFollowersModal] = useState(false);
+   const [followersModalTab, setFollowersModalTab] = useState<'followers' | 'following'>('followers');
 
    useEffect(() => {
       const loadCreator = async () => {
@@ -132,15 +135,25 @@ export const CreatorDetail: React.FC<CreatorDetailProps> = ({ onNavigate, creato
                            <h1 className="text-3xl md:text-4xl font-bold text-ink flex items-center gap-2">
                               {creator.username}
                               {creator.is_verified && (
-                                 <CheckCircle className="w-6 h-6 text-gold fill-current" />
+                                 <CheckCircle className="w-6 h-6 text-gold" />
                               )}
                            </h1>
                            <p className="text-inkLight font-medium mb-2">@{creator.username.toLowerCase()}</p>
                            <div className="flex items-center gap-4">
-                              <span className="text-sm">
+                              <button
+                                 onClick={() => { setFollowersModalTab('followers'); setShowFollowersModal(true); }}
+                                 className="text-sm hover:text-gold transition-colors"
+                              >
                                  <strong className="text-ink">{creator.follower_count || 0}</strong>
                                  <span className="text-inkLight"> followers</span>
-                              </span>
+                              </button>
+                              <button
+                                 onClick={() => { setFollowersModalTab('following'); setShowFollowersModal(true); }}
+                                 className="text-sm hover:text-gold transition-colors"
+                              >
+                                 <strong className="text-ink">{creator.following_count || 0}</strong>
+                                 <span className="text-inkLight"> following</span>
+                              </button>
                               <span className="inline-block px-3 py-1 bg-gold/10 text-gold text-xs font-bold rounded-full">
                                  {creator.role.toUpperCase()}
                               </span>
@@ -306,7 +319,19 @@ export const CreatorDetail: React.FC<CreatorDetailProps> = ({ onNavigate, creato
             </div>
 
          </div>
+
+         {/* Followers/Following Modal */}
+         {showFollowersModal && creator && (
+            <FollowersList
+               userId={creator.id}
+               username={creator.username}
+               initialTab={followersModalTab}
+               followerCount={creator.follower_count || 0}
+               followingCount={creator.following_count || 0}
+               onClose={() => setShowFollowersModal(false)}
+               onNavigate={onNavigate}
+            />
+         )}
       </div>
    );
 };
-

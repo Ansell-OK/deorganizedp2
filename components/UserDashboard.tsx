@@ -3,15 +3,18 @@ import {
    User, Settings, Clock, Heart, Shield, Zap,
    LogOut, Play, MoreHorizontal, MessageSquare,
    ThumbsUp, ExternalLink, CreditCard, Award, Loader2,
-   UserPlus, Share2
+   UserPlus, Share2, Bell, Crown, Calendar
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext';
+import { FollowersList } from './FollowersList';
 import {
    fetchUserProfile,
    fetchUserFollowing,
    getUserLikedShows,
    fetchNotifications,
+   markNotificationRead,
+   fetchShowByPk,
    UserProfile,
    Creator,
    Show,
@@ -19,12 +22,16 @@ import {
 } from '../lib/api';
 
 interface UserDashboardProps {
-   onNavigate: (page: string) => void;
+   onNavigate: (page: string, id?: string | number) => void;
 }
 
 export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
    const { backendUser, accessToken, logout } = useAuth();
    const [activeTab, setActiveTab] = useState<'history' | 'liked' | 'activity'>('liked');
+
+   // Followers modal
+   const [showFollowersModal, setShowFollowersModal] = useState(false);
+   const [followersModalTab, setFollowersModalTab] = useState<'followers' | 'following'>('followers');
 
    // Data states
    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -198,16 +205,21 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                            </div>
                         )}
 
-                        {/* Follower/Following Stats */}
                         <div className="flex gap-6 mb-6 w-full justify-center">
-                           <div className="text-center">
+                           <button
+                              onClick={() => { setFollowersModalTab('following'); setShowFollowersModal(true); }}
+                              className="text-center hover:text-gold transition-colors cursor-pointer"
+                           >
                               <p className="text-2xl font-bold text-ink">{userProfile?.following_count || 0}</p>
                               <p className="text-xs text-inkLight font-medium">Following</p>
-                           </div>
-                           <div className="text-center">
+                           </button>
+                           <button
+                              onClick={() => { setFollowersModalTab('followers'); setShowFollowersModal(true); }}
+                              className="text-center hover:text-gold transition-colors cursor-pointer"
+                           >
                               <p className="text-2xl font-bold text-ink">{userProfile?.follower_count || 0}</p>
                               <p className="text-xs text-inkLight font-medium">Followers</p>
-                           </div>
+                           </button>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 w-full">
@@ -221,6 +233,16 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                               <Settings className="w-4 h-4" /> Settings
                            </button>
                         </div>
+
+                        {/* Admin Dashboard Link (staff only) */}
+                        {backendUser.is_staff && (
+                           <button
+                              onClick={() => onNavigate('admin')}
+                              className="mt-3 w-full flex items-center justify-center gap-2 bg-gold/10 border border-gold/30 text-gold text-sm font-bold py-2.5 rounded-xl hover:bg-gold/20 transition-colors"
+                           >
+                              <Shield className="w-4 h-4" /> Admin Dashboard
+                           </button>
+                        )}
                      </div>
                   )}
                </div>
@@ -402,6 +424,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                                           case 'comment': return <MessageSquare className="w-4 h-4 text-blue-500" />;
                                           case 'follow': return <UserPlus className="w-4 h-4 text-green-500" />;
                                           case 'share': return <Share2 className="w-4 h-4 text-purple-500" />;
+                                          case 'guest_request': return <UserPlus className="w-4 h-4 text-purple-500" />;
+                                          case 'guest_accepted': return <ThumbsUp className="w-4 h-4 text-green-500" />;
+                                          case 'guest_declined': return <ExternalLink className="w-4 h-4 text-red-500" />;
+                                          case 'co_host_added': return <Crown className="w-4 h-4 text-gold" />;
+                                          case 'show_reminder': return <Calendar className="w-4 h-4 text-gold" />;
+                                          case 'show_cancelled': return <Bell className="w-4 h-4 text-red-500" />;
                                           default: return <Zap className="w-4 h-4 text-gold" />;
                                        }
                                     };
@@ -411,6 +439,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                                           case 'comment': return 'bg-blue-500/10';
                                           case 'follow': return 'bg-green-500/10';
                                           case 'share': return 'bg-purple-500/10';
+                                          case 'guest_request': return 'bg-purple-500/10';
+                                          case 'guest_accepted': return 'bg-green-500/10';
+                                          case 'guest_declined': return 'bg-red-500/10';
+                                          case 'co_host_added': return 'bg-gold/10';
+                                          case 'show_reminder': return 'bg-gold/10';
+                                          case 'show_cancelled': return 'bg-red-500/10';
                                           default: return 'bg-gold/10';
                                        }
                                     };
@@ -425,7 +459,45 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                                     return (
                                        <div
                                           key={item.id}
-                                          className={`flex items-center gap-3 p-3 rounded-xl ${!item.is_read ? 'bg-gold/5 border border-gold/20' : 'bg-surface border border-borderSubtle'}`}
+                                          onClick={async () => {
+                                             // Mark as read
+                                             if (!item.is_read && accessToken) {
+                                                try {
+                                                   await markNotificationRead(item.id, accessToken);
+                                                } catch (e) { console.error(e); }
+                                             }
+                                             // Route based on notification type
+                                             if (item.notification_type === 'follow' && typeof item.actor === 'object') {
+                                                onNavigate('creator-detail', item.actor.id);
+                                             } else if (item.notification_type === 'guest_request' && typeof item.actor === 'object') {
+                                                onNavigate('creator-detail', item.actor.id);
+                                             } else if (item.notification_type === 'guest_declined' && typeof item.actor === 'object') {
+                                                onNavigate('creator-detail', item.actor.id);
+                                             } else if (['guest_accepted', 'co_host_added', 'show_reminder', 'show_cancelled'].includes(item.notification_type)) {
+                                                if (item.show_slug) {
+                                                   onNavigate('show-detail', item.show_slug);
+                                                } else if (item.object_id) {
+                                                   try {
+                                                      const show = await fetchShowByPk(item.object_id);
+                                                      if (show) onNavigate('show-detail', show.slug);
+                                                   } catch { /* ignore */ }
+                                                }
+                                             } else if (item.notification_type === 'like' || item.notification_type === 'comment') {
+                                                if (item.content_type_name === 'post') {
+                                                   onNavigate('community');
+                                                } else if (item.content_type_name === 'event' && item.object_id) {
+                                                   onNavigate('event-detail', item.object_id);
+                                                } else if (item.show_slug) {
+                                                   onNavigate('show-detail', item.show_slug);
+                                                } else if (item.object_id) {
+                                                   try {
+                                                      const show = await fetchShowByPk(item.object_id);
+                                                      if (show) onNavigate('show-detail', show.slug);
+                                                   } catch { /* ignore */ }
+                                                }
+                                             }
+                                          }}
+                                          className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-gold/5 ${!item.is_read ? 'bg-gold/5 border border-gold/20' : 'bg-surface border border-borderSubtle'}`}
                                        >
                                           <div className={`w-9 h-9 rounded-full flex items-center justify-center ${getColor()}`}>
                                              {getIcon()}
@@ -433,9 +505,15 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                                           <div className="flex-1 min-w-0">
                                              <p className="text-sm text-ink">
                                                 <span className="font-bold">{typeof item.actor === 'object' ? item.actor.username : 'Someone'}</span>
-                                                {' '}{item.notification_type === 'like' ? 'liked your' : item.notification_type === 'comment' ? 'commented on your' : item.notification_type === 'follow' ? 'started following you' : 'shared your'}
-                                                {item.notification_type !== 'follow' && item.show_slug && (
+                                                {' '}{item.notification_type === 'like' ? 'liked your' : item.notification_type === 'comment' ? 'commented on your' : item.notification_type === 'follow' ? 'started following you' : item.notification_type === 'co_host_added' ? 'added you as co-host on' : item.notification_type === 'guest_request' ? 'wants to be on your show' : item.notification_type === 'guest_accepted' ? 'accepted your guest request' : item.notification_type === 'guest_declined' ? 'declined your guest request' : item.notification_type === 'show_reminder' ? 'Show starting soon:' : item.notification_type === 'show_cancelled' ? 'Show cancelled:' : 'interacted with your'}
+                                                {item.notification_type !== 'follow' && (item.show_title || item.show_slug) && (
                                                    <span className="font-semibold text-gold"> {item.show_title || 'show'}</span>
+                                                )}
+                                                {item.notification_type !== 'follow' && item.content_type_name === 'post' && (
+                                                   <span className="font-semibold text-gold"> post</span>
+                                                )}
+                                                {item.notification_type !== 'follow' && item.content_type_name === 'event' && (
+                                                   <span className="font-semibold text-gold"> event</span>
                                                 )}
                                              </p>
                                              <p className="text-xs text-inkLight mt-0.5">{timeAgo(item.created_at)}</p>
@@ -455,9 +533,20 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onNavigate }) => {
                </section>
 
             </div>
+
+            {/* Followers/Following Modal */}
+            {showFollowersModal && userProfile && (
+               <FollowersList
+                  userId={userProfile.id}
+                  username={userProfile.username}
+                  initialTab={followersModalTab}
+                  followerCount={userProfile.follower_count || 0}
+                  followingCount={userProfile.following_count || 0}
+                  onClose={() => setShowFollowersModal(false)}
+                  onNavigate={onNavigate}
+               />
+            )}
          </div>
       </div>
    );
 };
-
-

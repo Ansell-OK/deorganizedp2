@@ -17,9 +17,11 @@ import { EditProfile } from './components/EditProfile';
 import { EventCalendar } from './components/EventCalendar';
 import { EventDetail } from './components/EventDetail';
 import { FeedbackPopup } from './components/FeedbackPopup';
+import { AdminDashboard } from './components/AdminDashboard';
+import { CommunityFeed } from './components/CommunityFeed';
 
 
-type PageView = 'home' | 'shows' | 'creators' | 'dashboard' | 'user-profile' | 'register' | 'show-detail' | 'creator-detail' | 'edit-profile' | 'event-calendar' | 'event-detail';
+type PageView = 'home' | 'shows' | 'creators' | 'dashboard' | 'user-profile' | 'register' | 'show-detail' | 'creator-detail' | 'edit-profile' | 'event-calendar' | 'event-detail' | 'admin' | 'community';
 
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<PageView>('home');
@@ -58,6 +60,10 @@ const AppContent: React.FC = () => {
         return selectedId ? <EventDetail onNavigate={handleNavigate} eventId={Number(selectedId)} /> : <div>Event not found</div>;
       case 'edit-profile':
         return <EditProfile onNavigate={handleNavigate} />;
+      case 'admin':
+        return <AdminDashboard onNavigate={handleNavigate} />;
+      case 'community':
+        return <CommunityFeed onNavigate={handleNavigate} />;
       case 'register':
         return <ProfileSetup onNavigate={handleNavigate} />;
       case 'home':

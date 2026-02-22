@@ -33,6 +33,12 @@ export interface Show {
         profile_picture: string | null;
         is_verified: boolean;
     }[];
+    co_hosts: {
+        id: number;
+        username: string;
+        profile_picture: string | null;
+        is_verified: boolean;
+    }[];
     external_link: string | null;
     link_platform: 'youtube' | 'twitter' | 'twitch' | 'rumble' | 'kick' | 'other' | '';
     like_count: number;
@@ -42,14 +48,15 @@ export interface Show {
 
 export interface Notification {
     id: number;
-    notification_type: 'follow' | 'like' | 'comment' | 'share' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined';
+    notification_type: 'follow' | 'like' | 'comment' | 'share' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined' | 'co_host_added';
     message?: string;
     is_read: boolean;
     read?: boolean;
     created_at: string;
-    show_slug?: string;
-    show_title?: string;
+    show_slug?: string | null;
+    show_title?: string | null;
     content_type?: number | null;
+    content_type_name?: string | null;
     object_id?: number | null;
     recipient: {
         id: number;
@@ -535,6 +542,7 @@ export interface CreateShowPayload {
     tag_ids?: number[];
     external_link?: string;
     link_platform?: 'youtube' | 'twitter' | 'twitch' | 'rumble' | 'kick' | 'other';
+    co_host_ids?: number[];
 }
 
 export const createShow = async (payload: CreateShowPayload, accessToken: string): Promise<Show> => {
@@ -578,6 +586,12 @@ export const createShow = async (payload: CreateShowPayload, accessToken: string
             formData.append('link_platform', payload.link_platform);
         }
 
+        if (payload.co_host_ids && payload.co_host_ids.length > 0) {
+            payload.co_host_ids.forEach(id => {
+                formData.append('co_host_ids', id.toString());
+            });
+        }
+
         const response = await fetch(`${API_BASE_URL}/shows/`, {
             method: 'POST',
             headers: {
@@ -610,6 +624,7 @@ export interface UpdateShowPayload {
     tag_ids?: number[];
     external_link?: string;
     link_platform?: 'youtube' | 'twitter' | 'twitch' | 'rumble' | 'kick' | 'other';
+    co_host_ids?: number[];
 }
 
 export const updateShow = async (showSlug: string, payload: UpdateShowPayload, accessToken: string): Promise<Show> => {
@@ -650,6 +665,11 @@ export const updateShow = async (showSlug: string, payload: UpdateShowPayload, a
         }
         if (payload.link_platform !== undefined) {
             formData.append('link_platform', payload.link_platform || '');
+        }
+        if (payload.co_host_ids !== undefined) {
+            payload.co_host_ids.forEach(id => {
+                formData.append('co_host_ids', id.toString());
+            });
         }
 
         const response = await fetch(`${API_BASE_URL}/shows/${showSlug}/`, {
@@ -1177,11 +1197,19 @@ export interface Follow {
         id: number;
         username: string;
         profile_picture: string | null;
+        role?: string;
+        is_verified?: boolean;
+        bio?: string | null;
+        follower_count?: number;
     };
     following: {
         id: number;
         username: string;
         profile_picture: string | null;
+        role?: string;
+        is_verified?: boolean;
+        bio?: string | null;
+        follower_count?: number;
     };
     created_at: string;
 }
@@ -1237,6 +1265,40 @@ export const checkIsFollowing = async (
     }
 };
 
+// Fetch followers of a user
+export const fetchFollowers = async (
+    userId: number,
+    accessToken?: string
+): Promise<Follow[]> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+    const response = await fetch(
+        `${API_BASE_URL}/follows/followers/?user_id=${userId}`,
+        { headers }
+    );
+    if (!response.ok) throw new Error('Failed to fetch followers');
+    const data = await response.json();
+    return Array.isArray(data) ? data : data.results || [];
+};
+
+// Fetch users that a user is following
+export const fetchFollowing = async (
+    userId: number,
+    accessToken?: string
+): Promise<Follow[]> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
+    const response = await fetch(
+        `${API_BASE_URL}/follows/following/?user_id=${userId}`,
+        { headers }
+    );
+    if (!response.ok) throw new Error('Failed to fetch following');
+    const data = await response.json();
+    return Array.isArray(data) ? data : data.results || [];
+};
+
 // ============================================
 // NOTIFICATION FUNCTIONS
 // ============================================
@@ -1249,7 +1311,7 @@ export interface NotificationResponse {
         username: string;
         profile_picture: string | null;
     };
-    notification_type: 'follow' | 'like' | 'comment' | 'share' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined';
+    notification_type: 'follow' | 'like' | 'comment' | 'share' | 'show_reminder' | 'show_cancelled' | 'guest_request' | 'guest_accepted' | 'guest_declined' | 'co_host_added';
     content_type: number | null;
     object_id: number | null;
     message?: string;
