@@ -307,7 +307,7 @@ export const CreatorDetail: React.FC<CreatorDetailProps> = ({ onNavigate, creato
                                  </span>
                                  {show.is_recurring && show.day_of_week !== null && (
                                     <span className="ml-auto text-gold font-bold">
-                                       {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][show.day_of_week]}
+                                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][show.day_of_week]}
                                     </span>
                                  )}
                               </div>
